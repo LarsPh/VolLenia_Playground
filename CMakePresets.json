@@ -1,0 +1,41 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "vs2022-x64",
+      "displayName": "Visual Studio 2022 x64",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_CUDA_ARCHITECTURES": "native"
+      }
+    },
+    {
+      "name": "vs2022-x64-sm89",
+      "displayName": "Visual Studio 2022 x64 CUDA sm_89",
+      "inherits": "vs2022-x64",
+      "binaryDir": "${sourceDir}/build-sm89",
+      "cacheVariables": {
+        "CMAKE_CUDA_ARCHITECTURES": "89"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "vs2022-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "release-sm89",
+      "configurePreset": "vs2022-x64-sm89",
+      "configuration": "Release"
+    }
+  ]
+}
