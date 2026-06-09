@@ -1,0 +1,32 @@
+{
+  "volume": {
+    "nx": 128,
+    "ny": 128,
+    "nz": 128,
+    "channels": 1
+  },
+  "simulation": {
+    "dt": 0.1,
+    "steps_per_frame": 1,
+    "wrap_boundary": true
+  },
+  "growth": {
+    "type": "gaussian",
+    "mu": 0.15,
+    "sigma": 0.015
+  },
+  "kernel": {
+    "type": "radial_shell",
+    "radius": 13.0,
+    "core": "poly_quad4",
+    "shell_weights": [1.0],
+    "normalize_sum": true,
+    "zero_mean": false
+  },
+  "initial_state": {
+    "type": "random_blob",
+    "seed": 1,
+    "density": 0.3,
+    "radius_fraction": 0.25
+  }
+}

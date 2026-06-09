@@ -1,0 +1,33 @@
+# Build outputs
+build/
+out/
+cmake-build-*/
+.vs/
+*.vcxproj.user
+
+# Runtime outputs
+outputs/
+recordings/
+frames/
+cache/
+*.mp4
+*.avi
+*.mov
+
+# Binary snapshots
+*.bin
+*.raw
+*.npy
+*.npz
+
+# Logs
+*.log
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# CMake
+CMakeUserPresets.json
