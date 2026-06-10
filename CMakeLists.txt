@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 project(VolLenia_Playground
     VERSION 0.1.0
     DESCRIPTION "Volumetric 3D Lenia playground bootstrap"
-    LANGUAGES CXX CUDA
+    LANGUAGES C CXX CUDA
 )
 
 set(CMAKE_CXX_STANDARD 20)

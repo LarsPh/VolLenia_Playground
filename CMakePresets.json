@@ -24,6 +24,17 @@
       "cacheVariables": {
         "CMAKE_CUDA_ARCHITECTURES": "89"
       }
+    },
+    {
+      "name": "clangd-ninja",
+      "displayName": "Ninja (compile_commands for clangd)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-clangd",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "native"
+      }
     }
   ],
   "buildPresets": [
@@ -36,6 +47,10 @@
       "name": "release-sm89",
       "configurePreset": "vs2022-x64-sm89",
       "configuration": "Release"
+    },
+    {
+      "name": "clangd-ninja",
+      "configurePreset": "clangd-ninja"
     }
   ]
 }

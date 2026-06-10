@@ -2,8 +2,10 @@ references/
 
 # Build outputs
 build/
+build-clangd/
 out/
 cmake-build-*/
+compile_commands.json
 .vs/
 *.vcxproj.user
 
@@ -33,3 +35,10 @@ Thumbs.db
 
 # CMake
 CMakeUserPresets.json
+
+# imgui
+imgui.ini
+
+# cursor
+.cursorindexingignore
+.specstory/
