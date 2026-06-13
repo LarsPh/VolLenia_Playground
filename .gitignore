@@ -1,8 +1,7 @@
 references/
 
 # Build outputs
-build/
-build-clangd/
+build*/
 out/
 cmake-build-*/
 compile_commands.json

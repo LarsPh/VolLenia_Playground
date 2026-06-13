@@ -37,17 +37,17 @@ public:
     App() = default;
     ~App();
 
-    App(const App&) = delete;
-    App& operator=(const App&) = delete;
+    App(const App&) = delete; // disable copy constructor since it holds GLFW window and OpenGL context (possible double free)
+    App& operator=(const App&) = delete; // disable copy assignment
 
     int run();
 
 private:
     void initialize();
     void mainLoop();
-    void shutdown() noexcept;
+    void shutdown() noexcept; // called by destructor
 
-    [[nodiscard]] AppConfig loadConfig(const std::string& path) const;
+    [[nodiscard]] AppConfig loadConfig(const std::string& path) const; // nodiscard since return something important
     [[nodiscard]] CudaDeviceInfo queryCudaDeviceInfo() const;
 
     AppConfig config_;
