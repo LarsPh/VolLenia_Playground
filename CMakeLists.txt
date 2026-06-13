@@ -127,9 +127,11 @@ add_executable(VolLenia_Playground
     src/app/App.cpp
     src/app/Camera.cpp
     src/app/UiPanel.cpp
+    src/render/CudaVolumeRenderer.cu
     src/render/CudaPbo.cpp
     src/render/GlDisplay.cpp
     src/render/PboSmokeTest.cu
+    src/render/SyntheticVolume.cu
 )
 
 target_include_directories(VolLenia_Playground PRIVATE

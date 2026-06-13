@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/Camera.h"
+#include "render/RenderParams.h"
 
 #include <cstddef>
 #include <memory>
@@ -11,7 +12,9 @@ struct GLFWwindow;
 namespace vollenia {
 
 class CudaPbo;
+class CudaVolumeRenderer;
 class GlDisplay;
+class SyntheticVolume;
 
 struct WindowConfig {
     int width = 1280;
@@ -22,6 +25,9 @@ struct WindowConfig {
 struct AppConfig {
     WindowConfig window;
     CameraSettings camera;
+    RenderParams render;
+    VolumeDesc volume;
+    VolumePreset preset = VolumePreset::LeniaPhantom;
 };
 
 struct CudaDeviceInfo {
@@ -34,16 +40,6 @@ struct CudaDeviceInfo {
     int compute_minor = 0;
     std::size_t global_memory_bytes = 0;
     std::string error;
-};
-
-struct PboSmokeUiState {
-    bool resource_valid = false;
-    int framebuffer_width = 0;
-    int framebuffer_height = 0;
-    std::size_t pbo_byte_size = 0;
-    float animation_time_seconds = 0.0f;
-    std::string status = "Not initialized";
-    std::string last_error;
 };
 
 class App {
@@ -62,7 +58,8 @@ private:
     void shutdown() noexcept; // called by destructor
     void destroyRenderResources() noexcept;
     void updateFramebufferResources();
-    void renderPboSmokeFrame();
+    void handleCameraInput();
+    void renderVolumeFrame();
 
     [[nodiscard]] AppConfig loadConfig(const std::string& path) const; // nodiscard since return something important
     [[nodiscard]] CudaDeviceInfo queryCudaDeviceInfo() const;
@@ -71,11 +68,19 @@ private:
     Camera camera_;
     CudaDeviceInfo cuda_info_;
     std::unique_ptr<CudaPbo> pbo_;
+    std::unique_ptr<CudaVolumeRenderer> volume_renderer_;
     std::unique_ptr<GlDisplay> display_;
+    std::unique_ptr<SyntheticVolume> synthetic_volume_;
     GLFWwindow* window_ = nullptr;
     const char* gl_version_text_ = "Unavailable";
-    PboSmokeUiState pbo_smoke_ui_;
-    bool enable_pbo_smoke_test_ = true;
+    RenderParams render_params_;
+    VolumeRenderStatus volume_status_;
+    VolumePreset volume_preset_ = VolumePreset::LeniaPhantom;
+    int volume_resolution_ = 128;
+    unsigned int volume_seed_ = 1;
+    bool render_enabled_ = true;
+    bool volume_dirty_ = true;
+    bool renderer_volume_dirty_ = true;
     int framebuffer_width_ = 0;
     int framebuffer_height_ = 0;
     float animation_time_seconds_ = 0.0f;

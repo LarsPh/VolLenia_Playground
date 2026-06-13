@@ -9,13 +9,20 @@
     "target_height": 540,
     "step_size": 0.01,
     "density_scale": 4.0,
-    "threshold": 0.0,
-    "brightness": 1.0,
+    "threshold": 0.02,
+    "brightness": 1.4,
+    "early_exit_transmittance": 0.01,
     "max_steps": 512,
     "mode": "emission_absorption"
   },
+  "volume": {
+    "resolution": 128,
+    "preset": "lenia_phantom"
+  },
   "camera": {
     "distance": 3.0,
-    "fov_y_degrees": 45.0
+    "fov_y_degrees": 45.0,
+    "yaw_radians": 0.0,
+    "pitch_radians": 0.25
   }
 }

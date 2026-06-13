@@ -4,8 +4,9 @@
 #include "core/CudaCheck.h"
 #include "core/GlCheck.h"
 #include "render/CudaPbo.h"
+#include "render/CudaVolumeRenderer.h"
 #include "render/GlDisplay.h"
-#include "render/PboSmokeTest.h"
+#include "render/SyntheticVolume.h"
 
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -16,10 +17,12 @@
 
 #include <cuda_runtime.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 namespace vollenia {
 
@@ -44,6 +47,40 @@ T jsonValueOr(const nlohmann::json& object, const char* key, T fallback)
     return object.at(key).get<T>();
 }
 
+VolumePreset presetFromString(const std::string& value, VolumePreset fallback)
+{
+    if (value == "sphere") {
+        return VolumePreset::Sphere;
+    }
+    if (value == "shell") {
+        return VolumePreset::Shell;
+    }
+    if (value == "gaussian_blobs") {
+        return VolumePreset::GaussianBlobs;
+    }
+    if (value == "lenia_phantom") {
+        return VolumePreset::LeniaPhantom;
+    }
+    if (value == "axis_ramp") {
+        return VolumePreset::AxisRamp;
+    }
+    return fallback;
+}
+
+VolumeRenderMode renderModeFromString(const std::string& value, VolumeRenderMode fallback)
+{
+    if (value == "emission_absorption") {
+        return VolumeRenderMode::EmissionAbsorption;
+    }
+    if (value == "mip") {
+        return VolumeRenderMode::MIP;
+    }
+    if (value == "first_hit") {
+        return VolumeRenderMode::FirstHit;
+    }
+    return fallback;
+}
+
 } // namespace
 
 App::App() = default;
@@ -65,6 +102,9 @@ void App::initialize()
 {
     config_ = loadConfig("configs/app.default.json");
     camera_.setSettings(config_.camera);
+    render_params_ = config_.render;
+    volume_preset_ = config_.preset;
+    volume_resolution_ = config_.volume.nx;
     cuda_info_ = queryCudaDeviceInfo();
 
     glfwSetErrorCallback(glfwErrorCallback);
@@ -105,6 +145,8 @@ void App::initialize()
 
     pbo_ = std::make_unique<CudaPbo>();
     display_ = std::make_unique<GlDisplay>();
+    synthetic_volume_ = std::make_unique<SyntheticVolume>();
+    volume_renderer_ = std::make_unique<CudaVolumeRenderer>();
     framebuffer_width_ = framebuffer_width;
     framebuffer_height_ = framebuffer_height;
 
@@ -138,37 +180,46 @@ void App::mainLoop()
         animation_time_seconds_ += delta_time_seconds;
         previous_time = current_time;
 
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        handleCameraInput();
+
+        const ImGuiIO& io = ImGui::GetIO();
+        UiPanelResult ui_result = ui_panel.render(
+            cuda_info_,
+            gl_version_text_,
+            camera_,
+            volume_status_,
+            render_enabled_,
+            volume_preset_,
+            volume_resolution_,
+            render_params_,
+            io.Framerate,
+            frame_time_ms);
+        if (ui_result.regenerate_volume) {
+            ++volume_seed_;
+            volume_dirty_ = true;
+            renderer_volume_dirty_ = true;
+        }
+
         VOL_GL_CHECK(glClearColor(0.025f, 0.035f, 0.045f, 1.0f));
         VOL_GL_CHECK(glClear(GL_COLOR_BUFFER_BIT));
 
         try {
             updateFramebufferResources();
-            renderPboSmokeFrame();
+            renderVolumeFrame();
         } catch (const std::exception& exception) {
-            pbo_smoke_ui_.last_error = exception.what();
-            pbo_smoke_ui_.status = "Interop error; smoke test disabled";
-            enable_pbo_smoke_test_ = false;
+            volume_status_.last_error = exception.what();
+            volume_status_.status = "Volume renderer error";
+            render_enabled_ = false;
         }
-
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        const ImGuiIO& io = ImGui::GetIO();
-        const bool quit_requested = ui_panel.render(
-            cuda_info_,
-            gl_version_text_,
-            camera_.settings(),
-            pbo_smoke_ui_,
-            enable_pbo_smoke_test_,
-            io.Framerate,
-            frame_time_ms);
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(window_);
 
-        if (quit_requested) {
+        if (ui_result.quit_requested) {
             glfwSetWindowShouldClose(window_, GLFW_TRUE);
         }
     }
@@ -198,10 +249,13 @@ void App::shutdown() noexcept
 
 void App::destroyRenderResources() noexcept
 {
+    volume_renderer_.reset();
+    synthetic_volume_.reset();
     pbo_.reset();
     display_.reset();
-    pbo_smoke_ui_.resource_valid = false;
-    pbo_smoke_ui_.pbo_byte_size = 0;
+    volume_status_.volume_valid = false;
+    volume_status_.texture_valid = false;
+    volume_status_.volume_bytes = 0;
 }
 
 void App::updateFramebufferResources()
@@ -210,16 +264,14 @@ void App::updateFramebufferResources()
     int height = 0;
     glfwGetFramebufferSize(window_, &width, &height);
 
-    pbo_smoke_ui_.framebuffer_width = width;
-    pbo_smoke_ui_.framebuffer_height = height;
-    pbo_smoke_ui_.animation_time_seconds = animation_time_seconds_;
+    volume_status_.framebuffer_width = width;
+    volume_status_.framebuffer_height = height;
+    volume_status_.animation_time_seconds = animation_time_seconds_;
 
     if (width <= 0 || height <= 0) {
         framebuffer_width_ = width;
         framebuffer_height_ = height;
-        pbo_smoke_ui_.resource_valid = pbo_ != nullptr && pbo_->isValid();
-        pbo_smoke_ui_.pbo_byte_size = pbo_ != nullptr ? pbo_->byteSize() : 0;
-        pbo_smoke_ui_.status = "Framebuffer minimized; CUDA draw skipped";
+        volume_status_.status = "Framebuffer minimized; CUDA draw skipped";
         return;
     }
 
@@ -235,55 +287,98 @@ void App::updateFramebufferResources()
         display_->resize(width, height);
         framebuffer_width_ = width;
         framebuffer_height_ = height;
-        pbo_smoke_ui_.status = "CUDA/OpenGL interop resources ready";
     }
-
-    pbo_smoke_ui_.resource_valid = pbo_->isValid() && display_->isValid();
-    pbo_smoke_ui_.pbo_byte_size = pbo_->byteSize();
 }
 
-void App::renderPboSmokeFrame()
+void App::handleCameraInput()
 {
-    pbo_smoke_ui_.animation_time_seconds = animation_time_seconds_;
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse) {
+        return;
+    }
 
-    if (!enable_pbo_smoke_test_) {
-        pbo_smoke_ui_.status = "PBO smoke test disabled";
+    if (io.MouseDown[0]) {
+        camera_.orbit(io.MouseDelta.x, io.MouseDelta.y);
+    }
+    if (io.MouseWheel != 0.0f) {
+        camera_.zoom(io.MouseWheel);
+    }
+}
+
+void App::renderVolumeFrame()
+{
+    volume_status_.animation_time_seconds = animation_time_seconds_;
+    volume_status_.render_enabled = render_enabled_;
+    volume_status_.preset = volume_preset_;
+
+    if (!render_enabled_) {
+        volume_status_.status = "Volume renderer disabled";
         return;
     }
 
     if (framebuffer_width_ <= 0 || framebuffer_height_ <= 0) {
-        pbo_smoke_ui_.status = "Framebuffer minimized; CUDA draw skipped";
+        volume_status_.status = "Framebuffer minimized; CUDA draw skipped";
         return;
     }
 
     if (pbo_ == nullptr || display_ == nullptr || !pbo_->isValid() || !display_->isValid()) {
-        pbo_smoke_ui_.status = "Interop resources are not ready";
+        volume_status_.status = "PBO/display resources are not ready";
         return;
     }
+    if (synthetic_volume_ == nullptr) {
+        synthetic_volume_ = std::make_unique<SyntheticVolume>();
+    }
+    if (volume_renderer_ == nullptr) {
+        volume_renderer_ = std::make_unique<CudaVolumeRenderer>();
+    }
+
+    if (volume_dirty_) {
+        const int resolution = std::clamp(volume_resolution_, 16, 256);
+        volume_resolution_ = resolution;
+        const VolumeDesc desc {resolution, resolution, resolution};
+        synthetic_volume_->resize(desc);
+        synthetic_volume_->generate(volume_preset_, volume_seed_);
+        volume_dirty_ = false;
+        renderer_volume_dirty_ = true;
+        volume_status_.status = "Synthetic volume generated";
+    }
+
+    if (renderer_volume_dirty_) {
+        volume_renderer_->setVolume(*synthetic_volume_);
+        renderer_volume_dirty_ = false;
+        volume_status_.status = "CUDA 3D texture ready";
+    }
+
+    volume_status_.volume_valid = synthetic_volume_->isValid();
+    volume_status_.texture_valid = volume_renderer_->hasTexture();
+    volume_status_.volume_desc = synthetic_volume_->desc();
+    volume_status_.volume_bytes = synthetic_volume_->byteSize();
 
     bool mapped = false;
     try {
         const PboMapping mapping = pbo_->map();
         mapped = true;
 
-        launchPboSmokeTest(
-            mapping.device_ptr,
+        const float aspect = static_cast<float>(framebuffer_width_) / static_cast<float>(std::max(framebuffer_height_, 1));
+        volume_renderer_->render(
+            mapping,
             framebuffer_width_,
             framebuffer_height_,
-            animation_time_seconds_);
+            camera_.frame(aspect),
+            render_params_);
 
         pbo_->unmap();
         mapped = false;
 
         display_->drawPbo(pbo_->glBuffer(), framebuffer_width_, framebuffer_height_);
-        pbo_smoke_ui_.status = "Drawing CUDA-generated PBO smoke image";
-        pbo_smoke_ui_.last_error.clear();
+        volume_status_.status = "Rendering synthetic volume";
+        volume_status_.last_error.clear();
     } catch (...) {
         if (mapped) {
             try {
                 pbo_->unmap();
             } catch (const std::exception& exception) {
-                pbo_smoke_ui_.last_error = exception.what();
+                volume_status_.last_error = exception.what();
             }
         }
         throw;
@@ -314,6 +409,22 @@ AppConfig App::loadConfig(const std::string& path) const
     const nlohmann::json camera = root.value("camera", nlohmann::json::object());
     config.camera.distance = jsonValueOr(camera, "distance", config.camera.distance);
     config.camera.fov_y_degrees = jsonValueOr(camera, "fov_y_degrees", config.camera.fov_y_degrees);
+    config.camera.yaw_radians = jsonValueOr(camera, "yaw_radians", config.camera.yaw_radians);
+    config.camera.pitch_radians = jsonValueOr(camera, "pitch_radians", config.camera.pitch_radians);
+
+    const nlohmann::json render = root.value("render", nlohmann::json::object());
+    config.render.step_size = jsonValueOr(render, "step_size", config.render.step_size);
+    config.render.density_scale = jsonValueOr(render, "density_scale", config.render.density_scale);
+    config.render.threshold = jsonValueOr(render, "threshold", config.render.threshold);
+    config.render.brightness = jsonValueOr(render, "brightness", config.render.brightness);
+    config.render.max_steps = jsonValueOr(render, "max_steps", config.render.max_steps);
+    config.render.early_exit_transmittance = jsonValueOr(render, "early_exit_transmittance", config.render.early_exit_transmittance);
+    config.render.mode = renderModeFromString(jsonValueOr(render, "mode", std::string("emission_absorption")), config.render.mode);
+
+    const nlohmann::json volume = root.value("volume", nlohmann::json::object());
+    const int resolution = jsonValueOr(volume, "resolution", config.volume.nx);
+    config.volume = VolumeDesc {resolution, resolution, resolution};
+    config.preset = presetFromString(jsonValueOr(volume, "preset", std::string("lenia_phantom")), config.preset);
 
     return config;
 }

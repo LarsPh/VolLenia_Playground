@@ -4,14 +4,22 @@
 
 namespace vollenia {
 
+struct UiPanelResult {
+    bool quit_requested = false;
+    bool regenerate_volume = false;
+};
+
 class UiPanel {
 public:
-    bool render(
+    UiPanelResult render(
         const CudaDeviceInfo& cuda_info,
         const char* gl_version_text,
-        const CameraSettings& camera,
-        PboSmokeUiState& pbo_smoke,
-        bool& enable_pbo_smoke_test,
+        Camera& camera,
+        VolumeRenderStatus& volume_status,
+        bool& render_enabled,
+        VolumePreset& volume_preset,
+        int& volume_resolution,
+        RenderParams& render_params,
         float fps,
         float frame_time_ms);
 };

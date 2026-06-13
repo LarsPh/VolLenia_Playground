@@ -1,5 +1,14 @@
 CompileFlags:
   CompilationDatabase: build-clangd
+  Remove:
+    - --forward-unknown-to-host-compiler
+    - -forward-unknown-to-host-compiler
+    - -Xcompiler=*
+    - -Xcompiler
+    - -arch=*
+    - --gpu-architecture=*
+    - --generate-code=*
+    - -gencode=*
 
 Diagnostics:
   UnusedIncludes: None
