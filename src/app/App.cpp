@@ -3,6 +3,9 @@
 #include "app/UiPanel.h"
 #include "core/CudaCheck.h"
 #include "core/GlCheck.h"
+#include "render/CudaPbo.h"
+#include "render/GlDisplay.h"
+#include "render/PboSmokeTest.h"
 
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -42,6 +45,8 @@ T jsonValueOr(const nlohmann::json& object, const char* key, T fallback)
 }
 
 } // namespace
+
+App::App() = default;
 
 App::~App()
 {
@@ -98,6 +103,11 @@ void App::initialize()
     glfwGetFramebufferSize(window_, &framebuffer_width, &framebuffer_height);
     VOL_GL_CHECK(glViewport(0, 0, framebuffer_width, framebuffer_height));
 
+    pbo_ = std::make_unique<CudaPbo>();
+    display_ = std::make_unique<GlDisplay>();
+    framebuffer_width_ = framebuffer_width;
+    framebuffer_height_ = framebuffer_height;
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -123,8 +133,22 @@ void App::mainLoop()
         glfwPollEvents();
 
         const double current_time = glfwGetTime();
-        frame_time_ms = static_cast<float>((current_time - previous_time) * 1000.0);
+        const float delta_time_seconds = static_cast<float>(current_time - previous_time);
+        frame_time_ms = delta_time_seconds * 1000.0f;
+        animation_time_seconds_ += delta_time_seconds;
         previous_time = current_time;
+
+        VOL_GL_CHECK(glClearColor(0.025f, 0.035f, 0.045f, 1.0f));
+        VOL_GL_CHECK(glClear(GL_COLOR_BUFFER_BIT));
+
+        try {
+            updateFramebufferResources();
+            renderPboSmokeFrame();
+        } catch (const std::exception& exception) {
+            pbo_smoke_ui_.last_error = exception.what();
+            pbo_smoke_ui_.status = "Interop error; smoke test disabled";
+            enable_pbo_smoke_test_ = false;
+        }
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -135,11 +159,10 @@ void App::mainLoop()
             cuda_info_,
             gl_version_text_,
             camera_.settings(),
+            pbo_smoke_ui_,
+            enable_pbo_smoke_test_,
             io.Framerate,
             frame_time_ms);
-
-        VOL_GL_CHECK(glClearColor(0.025f, 0.035f, 0.045f, 1.0f));
-        VOL_GL_CHECK(glClear(GL_COLOR_BUFFER_BIT));
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -153,6 +176,8 @@ void App::mainLoop()
 
 void App::shutdown() noexcept
 {
+    destroyRenderResources();
+
     if (imgui_initialized_) {
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
@@ -168,6 +193,100 @@ void App::shutdown() noexcept
     if (glfw_initialized_) {
         glfwTerminate();
         glfw_initialized_ = false;
+    }
+}
+
+void App::destroyRenderResources() noexcept
+{
+    pbo_.reset();
+    display_.reset();
+    pbo_smoke_ui_.resource_valid = false;
+    pbo_smoke_ui_.pbo_byte_size = 0;
+}
+
+void App::updateFramebufferResources()
+{
+    int width = 0;
+    int height = 0;
+    glfwGetFramebufferSize(window_, &width, &height);
+
+    pbo_smoke_ui_.framebuffer_width = width;
+    pbo_smoke_ui_.framebuffer_height = height;
+    pbo_smoke_ui_.animation_time_seconds = animation_time_seconds_;
+
+    if (width <= 0 || height <= 0) {
+        framebuffer_width_ = width;
+        framebuffer_height_ = height;
+        pbo_smoke_ui_.resource_valid = pbo_ != nullptr && pbo_->isValid();
+        pbo_smoke_ui_.pbo_byte_size = pbo_ != nullptr ? pbo_->byteSize() : 0;
+        pbo_smoke_ui_.status = "Framebuffer minimized; CUDA draw skipped";
+        return;
+    }
+
+    if (pbo_ == nullptr) {
+        pbo_ = std::make_unique<CudaPbo>();
+    }
+    if (display_ == nullptr) {
+        display_ = std::make_unique<GlDisplay>();
+    }
+
+    if (width != framebuffer_width_ || height != framebuffer_height_ || !pbo_->isValid() || !display_->isValid()) {
+        pbo_->resize(width, height);
+        display_->resize(width, height);
+        framebuffer_width_ = width;
+        framebuffer_height_ = height;
+        pbo_smoke_ui_.status = "CUDA/OpenGL interop resources ready";
+    }
+
+    pbo_smoke_ui_.resource_valid = pbo_->isValid() && display_->isValid();
+    pbo_smoke_ui_.pbo_byte_size = pbo_->byteSize();
+}
+
+void App::renderPboSmokeFrame()
+{
+    pbo_smoke_ui_.animation_time_seconds = animation_time_seconds_;
+
+    if (!enable_pbo_smoke_test_) {
+        pbo_smoke_ui_.status = "PBO smoke test disabled";
+        return;
+    }
+
+    if (framebuffer_width_ <= 0 || framebuffer_height_ <= 0) {
+        pbo_smoke_ui_.status = "Framebuffer minimized; CUDA draw skipped";
+        return;
+    }
+
+    if (pbo_ == nullptr || display_ == nullptr || !pbo_->isValid() || !display_->isValid()) {
+        pbo_smoke_ui_.status = "Interop resources are not ready";
+        return;
+    }
+
+    bool mapped = false;
+    try {
+        const PboMapping mapping = pbo_->map();
+        mapped = true;
+
+        launchPboSmokeTest(
+            mapping.device_ptr,
+            framebuffer_width_,
+            framebuffer_height_,
+            animation_time_seconds_);
+
+        pbo_->unmap();
+        mapped = false;
+
+        display_->drawPbo(pbo_->glBuffer(), framebuffer_width_, framebuffer_height_);
+        pbo_smoke_ui_.status = "Drawing CUDA-generated PBO smoke image";
+        pbo_smoke_ui_.last_error.clear();
+    } catch (...) {
+        if (mapped) {
+            try {
+                pbo_->unmap();
+            } catch (const std::exception& exception) {
+                pbo_smoke_ui_.last_error = exception.what();
+            }
+        }
+        throw;
     }
 }
 

@@ -21,6 +21,8 @@ bool UiPanel::render(
     const CudaDeviceInfo& cuda_info,
     const char* gl_version_text,
     const CameraSettings& camera,
+    PboSmokeUiState& pbo_smoke,
+    bool& enable_pbo_smoke_test,
     float fps,
     float frame_time_ms)
 {
@@ -49,6 +51,18 @@ bool UiPanel::render(
     ImGui::Separator();
     ImGui::Text("Camera distance: %.2f", camera.distance);
     ImGui::Text("Camera FOV Y: %.1f deg", camera.fov_y_degrees);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("CUDA/OpenGL interop");
+    ImGui::Checkbox("Enable PBO smoke test", &enable_pbo_smoke_test);
+    ImGui::Text("Framebuffer: %d x %d", pbo_smoke.framebuffer_width, pbo_smoke.framebuffer_height);
+    ImGui::Text("PBO bytes: %zu", pbo_smoke.pbo_byte_size);
+    ImGui::Text("Animation time: %.2f s", pbo_smoke.animation_time_seconds);
+    ImGui::Text("Resource: %s", pbo_smoke.resource_valid ? "ready" : "not ready");
+    ImGui::TextWrapped("Status: %s", pbo_smoke.status.c_str());
+    if (!pbo_smoke.last_error.empty()) {
+        ImGui::TextWrapped("Last error: %s", pbo_smoke.last_error.c_str());
+    }
 
     ImGui::Separator();
     if (ImGui::Button("Quit")) {

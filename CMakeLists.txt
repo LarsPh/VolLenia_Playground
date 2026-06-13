@@ -127,6 +127,9 @@ add_executable(VolLenia_Playground
     src/app/App.cpp
     src/app/Camera.cpp
     src/app/UiPanel.cpp
+    src/render/CudaPbo.cpp
+    src/render/GlDisplay.cpp
+    src/render/PboSmokeTest.cu
 )
 
 target_include_directories(VolLenia_Playground PRIVATE
@@ -148,7 +151,9 @@ target_link_libraries(VolLenia_Playground PRIVATE
 )
 
 if(MSVC)
-    target_compile_options(VolLenia_Playground PRIVATE /W4 /permissive-)
+    target_compile_options(VolLenia_Playground PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:/W4 /permissive->
+    )
 else()
     target_compile_options(VolLenia_Playground PRIVATE -Wall -Wextra -Wpedantic)
 endif()
