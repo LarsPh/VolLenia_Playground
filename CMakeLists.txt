@@ -127,6 +127,8 @@ add_executable(VolLenia_Playground
     src/app/App.cpp
     src/app/Camera.cpp
     src/app/UiPanel.cpp
+    src/io/CellVolumeFile.cpp
+    src/io/LeniaAnimalCatalog.cpp
     src/render/CudaVolumeRenderer.cu
     src/render/CudaPbo.cpp
     src/render/GlDisplay.cpp

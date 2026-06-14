@@ -15,6 +15,9 @@ struct UiPanelResult {
     bool lenia_resolution_changed = false;
     bool lenia_seed_preset_changed = false;
     bool lenia_param_preset_changed = false;
+    bool lenia_load_animal = false;
+    bool lenia_apply_cells_only = false;
+    bool lenia_apply_params_only = false;
 };
 
 class UiPanel {
@@ -26,6 +29,7 @@ public:
         VolumeRenderStatus& volume_status,
         const LeniaStatus& lenia_status,
         VolumeSource& volume_source,
+        const LeniaAnimalCatalog& animal_catalog,
         bool& render_enabled,
         VolumePreset& volume_preset,
         int& volume_resolution,

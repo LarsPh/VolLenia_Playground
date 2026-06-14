@@ -41,3 +41,6 @@ imgui.ini
 # cursor
 .cursorindexingignore
 .specstory/
+
+# generated data
+assets/cells/lenia3d_reference/*.f32

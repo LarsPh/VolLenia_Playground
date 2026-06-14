@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/Camera.h"
+#include "io/LeniaAnimalCatalog.h"
 #include "render/RenderParams.h"
 #include "sim/LeniaParams.h"
 
@@ -14,13 +15,14 @@ namespace vollenia {
 
 class CudaPbo;
 class CudaVolumeRenderer;
+class DeviceVolume;
 class GlDisplay;
 class LeniaSimulation;
 class SyntheticVolume;
 
 struct WindowConfig {
-    int width = 1280;
-    int height = 720;
+    int width = 1600;
+    int height = 900;
     std::string title = "VolLenia Playground";
 };
 
@@ -33,14 +35,32 @@ struct AppConfig {
     VolumeSource source = VolumeSource::Lenia;
 };
 
+enum class LeniaCellsSource {
+    Procedural = 0,
+    Imported,
+    Modified,
+};
+
+enum class LeniaParamsSource {
+    ParameterPreset = 0,
+    Animal,
+    Modified,
+};
+
 struct LeniaConfig {
     bool playing = true;
+    bool validate_nan_inf_every_step = false;
     int steps_per_frame = 1;
     int resolution = 128;
+    int selected_animal_index = 0;
+    int cells_source_animal_index = -1;
+    int params_source_animal_index = -1;
     unsigned int seed = 1;
     LeniaSeedPreset seed_preset = LeniaSeedPreset::ReferenceRandomBox;
     LeniaParamPreset param_preset = LeniaParamPreset::DiguttomeSaliens;
     LeniaParams params = leniaParamsForPreset(LeniaParamPreset::DiguttomeSaliens);
+    LeniaCellsSource cells_source = LeniaCellsSource::Procedural;
+    LeniaParamsSource params_source = LeniaParamsSource::ParameterPreset;
 };
 
 struct CudaDeviceInfo {
@@ -76,6 +96,8 @@ private:
     void renderSyntheticVolumeFrame();
     void renderLeniaVolumeFrame();
     void drawUploadedVolume(DeviceVolumeView volume, const char* status_text);
+    void loadAnimalCells(int animal_index);
+    void applyAnimalParams(int animal_index);
 
     [[nodiscard]] AppConfig loadConfig(const std::string& path) const; // nodiscard since return something important
     void loadLeniaConfig(const std::string& path);
@@ -89,6 +111,8 @@ private:
     std::unique_ptr<GlDisplay> display_;
     std::unique_ptr<SyntheticVolume> synthetic_volume_;
     std::unique_ptr<LeniaSimulation> lenia_simulation_;
+    std::unique_ptr<DeviceVolume> imported_cells_;
+    LeniaAnimalCatalog animal_catalog_;
     GLFWwindow* window_ = nullptr;
     const char* gl_version_text_ = "Unavailable";
     RenderParams render_params_;
@@ -106,6 +130,7 @@ private:
     bool lenia_seed_dirty_ = true;
     bool lenia_kernel_dirty_ = true;
     bool lenia_single_step_requested_ = false;
+    bool lenia_imported_cells_dirty_ = false;
     int framebuffer_width_ = 0;
     int framebuffer_height_ = 0;
     float animation_time_seconds_ = 0.0f;

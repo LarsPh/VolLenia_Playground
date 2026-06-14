@@ -26,6 +26,19 @@ enum class LeniaSeedPreset {
     SmallBlob,
 };
 
+enum class KernelCoreType {
+    PolynomialBump = 1,
+    ExponentialBump = 2,
+    Step = 3,
+    Staircase = 4,
+};
+
+enum class GrowthFunctionType {
+    Polynomial = 1,
+    Gaussian = 2,
+    Step = 3,
+};
+
 struct LeniaParams {
     float radius = 10.0f;
     float T = 10.0f;
@@ -33,6 +46,8 @@ struct LeniaParams {
     float sigma = 0.01f;
     std::array<float, 8> shell_weights {1.0f, 0.75f, 0.5833333f, 0.9166667f, 0.0f, 0.0f, 0.0f, 0.0f};
     int shell_count = 4;
+    KernelCoreType kernel_core = KernelCoreType::PolynomialBump;
+    GrowthFunctionType growth_function = GrowthFunctionType::Polynomial;
 };
 
 struct LeniaStatus {
@@ -92,22 +107,52 @@ inline const char* leniaSeedPresetName(LeniaSeedPreset preset)
     }
 }
 
+inline const char* kernelCoreTypeName(KernelCoreType type)
+{
+    switch (type) {
+    case KernelCoreType::PolynomialBump:
+        return "Polynomial bump";
+    case KernelCoreType::ExponentialBump:
+        return "Exponential bump";
+    case KernelCoreType::Step:
+        return "Step (experimental)";
+    case KernelCoreType::Staircase:
+        return "Staircase (experimental)";
+    default:
+        return "Unknown";
+    }
+}
+
+inline const char* growthFunctionTypeName(GrowthFunctionType type)
+{
+    switch (type) {
+    case GrowthFunctionType::Polynomial:
+        return "Polynomial";
+    case GrowthFunctionType::Gaussian:
+        return "Gaussian";
+    case GrowthFunctionType::Step:
+        return "Step";
+    default:
+        return "Unknown";
+    }
+}
+
 inline LeniaParams leniaParamsForPreset(LeniaParamPreset preset)
 {
     switch (preset) {
     case LeniaParamPreset::DiguttomeTardus:
-        return LeniaParams {10.0f, 10.0f, 0.15f, 0.016f, {0.6666667f, 1.0f, 0.8333333f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 3};
+        return LeniaParams {10.0f, 10.0f, 0.15f, 0.016f, {0.6666667f, 1.0f, 0.8333333f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 3, KernelCoreType::PolynomialBump, GrowthFunctionType::Polynomial};
     case LeniaParamPreset::TriguttomeLabens:
-        return LeniaParams {10.0f, 10.0f, 0.16f, 0.015f, {1.0f, 0.4166667f, 0.0833333f, 0.1666667f, 0.0f, 0.0f, 0.0f, 0.0f}, 4};
+        return LeniaParams {10.0f, 10.0f, 0.16f, 0.015f, {1.0f, 0.4166667f, 0.0833333f, 0.1666667f, 0.0f, 0.0f, 0.0f, 0.0f}, 4, KernelCoreType::PolynomialBump, GrowthFunctionType::Polynomial};
     case LeniaParamPreset::DiguttomeSaliens:
     default:
-        return LeniaParams {10.0f, 10.0f, 0.12f, 0.01f, {1.0f, 0.75f, 0.5833333f, 0.9166667f, 0.0f, 0.0f, 0.0f, 0.0f}, 4};
+        return LeniaParams {10.0f, 10.0f, 0.12f, 0.01f, {1.0f, 0.75f, 0.5833333f, 0.9166667f, 0.0f, 0.0f, 0.0f, 0.0f}, 4, KernelCoreType::PolynomialBump, GrowthFunctionType::Polynomial};
     }
 }
 
 inline bool leniaKernelParamsEqual(const LeniaParams& a, const LeniaParams& b)
 {
-    if (a.radius != b.radius || a.shell_count != b.shell_count) {
+    if (a.radius != b.radius || a.shell_count != b.shell_count || a.kernel_core != b.kernel_core) {
         return false;
     }
     for (int i = 0; i < a.shell_count; ++i) {

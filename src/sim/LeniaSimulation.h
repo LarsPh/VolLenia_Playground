@@ -17,9 +17,10 @@ public:
 
     void initialize(VolumeDesc desc, const LeniaParams& params, LeniaSeedPreset seed_preset, unsigned int seed);
     void resetSeed(LeniaSeedPreset seed_preset, unsigned int seed);
+    void resetImportedCells(DeviceVolumeView source_cells);
     void setParams(const LeniaParams& params);
     void rebuildKernel();
-    void simulateSteps(int steps);
+    void simulateSteps(int steps, bool validate_nan_inf);
     void destroy();
 
     [[nodiscard]] DeviceVolumeView currentStateView() const { return state_.view(); }

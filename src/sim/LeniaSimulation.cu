@@ -68,7 +68,9 @@ __global__ void updateStateKernel(
     float inv_n,
     float mu,
     float sigma,
-    float T)
+    float T,
+    GrowthFunctionType growth_function,
+    bool validate_nan_inf)
 {
     const std::size_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= count) {
@@ -78,19 +80,61 @@ __global__ void updateStateKernel(
     const float u = potential[index] * inv_n;
     const float sigma_safe = fmaxf(sigma, 1.0e-5f);
     const float diff = u - mu;
-    const float growth = 2.0f * expf(-(diff * diff) / (2.0f * sigma_safe * sigma_safe)) - 1.0f;
+    float growth = 0.0f;
+    if (growth_function == GrowthFunctionType::Gaussian) {
+        growth = 2.0f * expf(-(diff * diff) / (2.0f * sigma_safe * sigma_safe)) - 1.0f;
+    } else if (growth_function == GrowthFunctionType::Step) {
+        growth = fabsf(diff) <= sigma_safe ? 1.0f : -1.0f;
+    } else {
+        const float value = fmaxf(0.0f, 1.0f - (diff * diff) / (9.0f * sigma_safe * sigma_safe));
+        const float value2 = value * value;
+        growth = 2.0f * value2 * value2 - 1.0f;
+    }
     float next = state[index] + growth / fmaxf(T, 1.0f);
-    if (!isfinite(next)) {
+    if (validate_nan_inf && !isfinite(next)) {
         atomicExch(invalid_flag, 1);
         next = 0.0f;
     }
     state[index] = clamp01(next);
 }
 
-float polynomialCore(float r)
+__global__ void copyCenteredKernel(float* target, VolumeDesc target_desc, const float* source, VolumeDesc source_desc)
+{
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+    const int z = blockIdx.z * blockDim.z + threadIdx.z;
+    if (x >= source_desc.nx || y >= source_desc.ny || z >= source_desc.nz) {
+        return;
+    }
+
+    const int target_x = x + (target_desc.nx - source_desc.nx) / 2;
+    const int target_y = y + (target_desc.ny - source_desc.ny) / 2;
+    const int target_z = z + (target_desc.nz - source_desc.nz) / 2;
+    if (target_x < 0 || target_x >= target_desc.nx || target_y < 0 || target_y >= target_desc.ny || target_z < 0 || target_z >= target_desc.nz) {
+        return;
+    }
+
+    const int source_index = (z * source_desc.ny + y) * source_desc.nx + x;
+    const int target_index = (target_z * target_desc.ny + target_y) * target_desc.nx + target_x;
+    target[target_index] = clamp01(source[source_index]);
+}
+
+float kernelCoreValue(float r, KernelCoreType type)
 {
     if (r < 0.0f || r > 1.0f) {
         return 0.0f;
+    }
+    if (type == KernelCoreType::ExponentialBump) {
+        if (r <= 0.0f || r >= 1.0f) {
+            return 0.0f;
+        }
+        return std::exp(4.0f - 1.0f / (r * (1.0f - r)));
+    }
+    if (type == KernelCoreType::Step) {
+        return (r >= 0.25f && r <= 0.75f) ? 1.0f : 0.0f;
+    }
+    if (type == KernelCoreType::Staircase) {
+        return (r >= 0.25f && r <= 0.75f) ? 1.0f : (r < 0.25f ? 0.5f : 0.0f);
     }
     const float value = 4.0f * r * (1.0f - r);
     return value * value * value * value;
@@ -125,7 +169,7 @@ void buildSpatialKernel(VolumeDesc desc, const LeniaParams& params, float* kerne
                     const float shell_position = q * static_cast<float>(shell_count);
                     const int shell_index = std::clamp(static_cast<int>(std::floor(shell_position)), 0, shell_count - 1);
                     const float local_r = shell_position - std::floor(shell_position);
-                    value = params.shell_weights[static_cast<std::size_t>(shell_index)] * polynomialCore(local_r);
+                    value = params.shell_weights[static_cast<std::size_t>(shell_index)] * kernelCoreValue(local_r, params.kernel_core);
                 }
                 const std::size_t index = static_cast<std::size_t>((z * desc.ny + y) * desc.nx + x);
                 kernel[index] = value;
@@ -181,6 +225,31 @@ void LeniaSimulation::resetSeed(LeniaSeedPreset seed_preset, unsigned int seed)
     updateStatus();
 }
 
+void LeniaSimulation::resetImportedCells(DeviceVolumeView source_cells)
+{
+    if (!buffers_ready_) {
+        throw std::runtime_error("Cannot reset imported Lenia cells before buffers are initialized");
+    }
+    if (source_cells.data == nullptr || !isValidVolumeDesc(source_cells.desc)) {
+        throw std::runtime_error("Cannot reset imported Lenia cells from invalid source");
+    }
+
+    state_.clear(0.0f);
+    const dim3 block(8, 8, 8);
+    const dim3 grid(
+        (static_cast<unsigned int>(source_cells.desc.nx) + block.x - 1U) / block.x,
+        (static_cast<unsigned int>(source_cells.desc.ny) + block.y - 1U) / block.y,
+        (static_cast<unsigned int>(source_cells.desc.nz) + block.z - 1U) / block.z);
+    copyCenteredKernel<<<grid, block>>>(state_.data(), desc_, source_cells.data, source_cells.desc);
+    VOL_CUDA_CHECK(cudaGetLastError());
+
+    status_.generation = 0;
+    status_.simulation_status = "Imported cells reset";
+    status_.last_step_had_invalid_values = false;
+    status_.last_error = "";
+    updateStatus();
+}
+
 void LeniaSimulation::setParams(const LeniaParams& params)
 {
     const LeniaParams sanitized = sanitizeParams(params);
@@ -214,7 +283,7 @@ void LeniaSimulation::rebuildKernel()
     VOL_CUDA_CHECK(cudaGetLastError());
 }
 
-void LeniaSimulation::simulateSteps(int steps)
+void LeniaSimulation::simulateSteps(int steps, bool validate_nan_inf)
 {
     if (steps <= 0) {
         return;
@@ -247,12 +316,16 @@ void LeniaSimulation::simulateSteps(int steps)
             inv_n,
             params_.mu,
             params_.sigma,
-            params_.T);
+            params_.T,
+            params_.growth_function,
+            validate_nan_inf);
         VOL_CUDA_CHECK(cudaGetLastError());
 
-        int invalid = 0;
-        VOL_CUDA_CHECK(cudaMemcpy(&invalid, invalid_flag_, sizeof(int), cudaMemcpyDefault));
-        invalid_seen = invalid_seen || invalid != 0;
+        if (validate_nan_inf) {
+            int invalid = 0;
+            VOL_CUDA_CHECK(cudaMemcpy(&invalid, invalid_flag_, sizeof(int), cudaMemcpyDefault));
+            invalid_seen = invalid_seen || invalid != 0;
+        }
         ++status_.generation;
     }
 

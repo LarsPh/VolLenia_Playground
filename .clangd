@@ -9,6 +9,10 @@ CompileFlags:
     - --gpu-architecture=*
     - --generate-code=*
     - -gencode=*
+    - --cuda-gpu-arch=*
+    - --cuda-path=*
+    - -xcuda
+    - --no-cuda-version-check
 
 Diagnostics:
   UnusedIncludes: None

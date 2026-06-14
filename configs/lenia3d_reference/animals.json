@@ -1,0 +1,967 @@
+{
+  "source": "D:\\projects\\Lenia3D\\src\\data\\animals3D.js",
+  "format_version": 1,
+  "layout": "x-fastest",
+  "animals": [
+    {
+      "id": 0,
+      "source_index": 3,
+      "slug": "diguttome_saliens",
+      "code": "4Gu2s",
+      "name": "Diguttome saliens",
+      "cname": "乙雫球(躍)",
+      "dims": [
+        14,
+        13,
+        13
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/diguttome_saliens.f32",
+      "params": {
+        "R": 10.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.75,
+          0.5833333333333334,
+          0.9166666666666666
+        ],
+        "m": 0.12,
+        "s": 0.01,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 1,
+      "source_index": 4,
+      "slug": "diguttome_tardus",
+      "code": "3Gu2t",
+      "name": "Diguttome tardus",
+      "cname": "乙雫球(緩)",
+      "dims": [
+        13,
+        12,
+        12
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/diguttome_tardus.f32",
+      "params": {
+        "R": 10.0,
+        "T": 10.0,
+        "b": [
+          0.6666666666666666,
+          1.0,
+          0.8333333333333334
+        ],
+        "m": 0.15,
+        "s": 0.016,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 2,
+      "source_index": 5,
+      "slug": "triguttome_labens",
+      "code": "4Gu3l",
+      "name": "Triguttome labens",
+      "cname": "丙雫球(翔)",
+      "dims": [
+        11,
+        12,
+        11
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/triguttome_labens.f32",
+      "params": {
+        "R": 10.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667,
+          0.08333333333333333,
+          0.16666666666666666
+        ],
+        "m": 0.16,
+        "s": 0.015,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 3,
+      "source_index": 7,
+      "slug": "sphaerome_lithos",
+      "code": "1Sp1l",
+      "name": "Sphaerome lithos",
+      "cname": "正球(石)",
+      "dims": [
+        11,
+        12,
+        11
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/sphaerome_lithos.f32",
+      "params": {
+        "R": 12.0,
+        "T": 10.0,
+        "b": [
+          1.0
+        ],
+        "m": 0.14,
+        "s": 0.016,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 4,
+      "source_index": 8,
+      "slug": "sphaerome_ventilans",
+      "code": "1Sp1v",
+      "name": "Sphaerome ventilans",
+      "cname": "正球(透)",
+      "dims": [
+        20,
+        21,
+        21
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/sphaerome_ventilans.f32",
+      "params": {
+        "R": 20.0,
+        "T": 10.0,
+        "b": [
+          1.0
+        ],
+        "m": 0.23,
+        "s": 0.031,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 5,
+      "source_index": 9,
+      "slug": "disphaerome_lithos",
+      "code": "3Sp2l",
+      "name": "Disphaerome lithos",
+      "cname": "乙正球(石)",
+      "dims": [
+        16,
+        15,
+        15
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/disphaerome_lithos.f32",
+      "params": {
+        "R": 12.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "m": 0.15,
+        "s": 0.017,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 6,
+      "source_index": 10,
+      "slug": "trisphaerome_asper",
+      "code": "4Sp3a",
+      "name": "Trisphaerome asper",
+      "cname": "丙正球(糙)",
+      "dims": [
+        16,
+        17,
+        16
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/trisphaerome_asper.f32",
+      "params": {
+        "R": 12.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.0,
+          0.08333333333333333,
+          0.08333333333333333
+        ],
+        "m": 0.22,
+        "s": 0.028,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 7,
+      "source_index": 12,
+      "slug": "ovome_limus",
+      "code": "4Ov1l",
+      "name": "Ovome limus",
+      "cname": "卵球(偏)",
+      "dims": [
+        13,
+        13,
+        13
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/ovome_limus.f32",
+      "params": {
+        "R": 10.0,
+        "T": 10.0,
+        "b": [
+          0.5833333333333334,
+          0.16666666666666666,
+          1.0,
+          0.8333333333333334
+        ],
+        "m": 0.15,
+        "s": 0.019,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 8,
+      "source_index": 13,
+      "slug": "ovome_embryon",
+      "code": "3Ov1e",
+      "name": "Ovome embryon",
+      "cname": "卵球(胚)",
+      "dims": [
+        16,
+        16,
+        15
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/ovome_embryon.f32",
+      "params": {
+        "R": 12.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.9166666666666666,
+          0.75
+        ],
+        "m": 0.26,
+        "s": 0.039,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 9,
+      "source_index": 14,
+      "slug": "ovome_octahedron",
+      "code": "3Ov1c",
+      "name": "Ovome octahedron",
+      "cname": "卵球(八面)",
+      "dims": [
+        13,
+        13,
+        13
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/ovome_octahedron.f32",
+      "params": {
+        "R": 10.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.3333333333333333,
+          0.25
+        ],
+        "m": 0.24,
+        "s": 0.041,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 10,
+      "source_index": 15,
+      "slug": "ovome_ellipsis",
+      "code": "3Ov1e",
+      "name": "Ovome ellipsis",
+      "cname": "卵球(橢)",
+      "dims": [
+        13,
+        12,
+        12
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/ovome_ellipsis.f32",
+      "params": {
+        "R": 10.0,
+        "T": 10.0,
+        "b": [
+          0.5,
+          1.0,
+          0.75
+        ],
+        "m": 0.2,
+        "s": 0.028,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 11,
+      "source_index": 16,
+      "slug": "ovome_torus",
+      "code": "3Ov1t",
+      "name": "Ovome torus",
+      "cname": "卵球(環)",
+      "dims": [
+        32,
+        32,
+        32
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/ovome_torus.f32",
+      "params": {
+        "R": 15.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.6666666666666666,
+          0.16666666666666666
+        ],
+        "m": 0.27,
+        "s": 0.036,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 12,
+      "source_index": 18,
+      "slug": "octahedrome_lithos",
+      "code": "2Pl8l",
+      "name": "Octahedrome lithos",
+      "cname": "八面球(石)",
+      "dims": [
+        14,
+        14,
+        14
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/octahedrome_lithos.f32",
+      "params": {
+        "R": 13.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.19,
+        "s": 0.019,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 13,
+      "source_index": 19,
+      "slug": "octahedrome_torquens",
+      "code": "2Pl8t",
+      "name": "Octahedrome torquens",
+      "cname": "八面球(扭)",
+      "dims": [
+        16,
+        15,
+        15
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/octahedrome_torquens.f32",
+      "params": {
+        "R": 15.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.17,
+        "s": 0.015,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 14,
+      "source_index": 20,
+      "slug": "hexahedrome_rotans",
+      "code": "2Pl6l",
+      "name": "Hexahedrome rotans",
+      "cname": "六面球(轉)",
+      "dims": [
+        19,
+        19,
+        19
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/hexahedrome_rotans.f32",
+      "params": {
+        "R": 18.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.17,
+        "s": 0.014,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 15,
+      "source_index": 21,
+      "slug": "hexahedrome_inversus",
+      "code": "2Pl6i",
+      "name": "Hexahedrome inversus",
+      "cname": "六面球(反)",
+      "dims": [
+        26,
+        25,
+        25
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/hexahedrome_inversus.f32",
+      "params": {
+        "R": 25.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.18,
+        "s": 0.016,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 16,
+      "source_index": 22,
+      "slug": "tetrahedrome_rotans",
+      "code": "2Pl4t",
+      "name": "Tetrahedrome rotans",
+      "cname": "四面球(轉)",
+      "dims": [
+        18,
+        18,
+        18
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/tetrahedrome_rotans.f32",
+      "params": {
+        "R": 18.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.17,
+        "s": 0.014,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 17,
+      "source_index": 25,
+      "slug": "foraminome_asper",
+      "code": "4As1a",
+      "name": "Foraminome asper",
+      "cname": "孔球(糙)",
+      "dims": [
+        16,
+        16,
+        15
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/foraminome_asper.f32",
+      "params": {
+        "R": 12.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.0,
+          0.08333333333333333,
+          0.08333333333333333
+        ],
+        "m": 0.22,
+        "s": 0.025,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 18,
+      "source_index": 26,
+      "slug": "foraminome_lithos",
+      "code": "4As1l",
+      "name": "Foraminome lithos",
+      "cname": "孔球(石)",
+      "dims": [
+        14,
+        14,
+        13
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/foraminome_lithos.f32",
+      "params": {
+        "R": 12.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667,
+          0.08333333333333333,
+          0.16666666666666666
+        ],
+        "m": 0.19,
+        "s": 0.018,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 19,
+      "source_index": 27,
+      "slug": "foraminome_lithos_2",
+      "code": "3As1l",
+      "name": "Foraminome lithos",
+      "cname": "孔球(石)",
+      "dims": [
+        20,
+        21,
+        20
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/foraminome_lithos_2.f32",
+      "params": {
+        "R": 18.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.0,
+          0.16666666666666666
+        ],
+        "m": 0.18,
+        "s": 0.016,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 20,
+      "source_index": 29,
+      "slug": "granome_lithos",
+      "code": "3As2l",
+      "name": "Granome lithos",
+      "cname": "顆球(石)",
+      "dims": [
+        26,
+        25,
+        25
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/granome_lithos.f32",
+      "params": {
+        "R": 10.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.08333333333333333,
+          0.25
+        ],
+        "m": 0.22,
+        "s": 0.023,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 21,
+      "source_index": 30,
+      "slug": "granome_lithos_2",
+      "code": "2As2l",
+      "name": "Granome lithos",
+      "cname": "顆球(石)",
+      "dims": [
+        26,
+        26,
+        25
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/granome_lithos_2.f32",
+      "params": {
+        "R": 10.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.31,
+        "s": 0.048,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 22,
+      "source_index": 31,
+      "slug": "granome_ventilans",
+      "code": "2As2v",
+      "name": "Granome ventilans",
+      "cname": "顆球(透)",
+      "dims": [
+        45,
+        44,
+        45
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/granome_ventilans.f32",
+      "params": {
+        "R": 15.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.5833333333333334
+        ],
+        "m": 0.24,
+        "s": 0.028,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 23,
+      "source_index": 33,
+      "slug": "stylomembranome_lithos",
+      "code": "1MeS1l",
+      "name": "Stylomembranome lithos",
+      "cname": "柱膜(石)",
+      "dims": [
+        24,
+        24,
+        64
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/stylomembranome_lithos.f32",
+      "params": {
+        "R": 25.0,
+        "T": 10.0,
+        "b": [
+          1.0
+        ],
+        "m": 0.23,
+        "s": 0.035,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 24,
+      "source_index": 34,
+      "slug": "stylomembranome_limus",
+      "code": "2MeS2l",
+      "name": "Stylomembranome limus",
+      "cname": "柱膜(偏)",
+      "dims": [
+        29,
+        29,
+        64
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/stylomembranome_limus.f32",
+      "params": {
+        "R": 25.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.17,
+        "s": 0.016,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 25,
+      "source_index": 35,
+      "slug": "stylomembranome_lithos_2",
+      "code": "2MeS2l",
+      "name": "Stylomembranome lithos",
+      "cname": "柱膜(石)",
+      "dims": [
+        22,
+        23,
+        64
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/stylomembranome_lithos_2.f32",
+      "params": {
+        "R": 25.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.17,
+        "s": 0.014,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 26,
+      "source_index": 36,
+      "slug": "stylomembranome_tardus",
+      "code": "4MeS3t",
+      "name": "Stylomembranome tardus",
+      "cname": "柱膜(緩)",
+      "dims": [
+        29,
+        29,
+        64
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/stylomembranome_tardus.f32",
+      "params": {
+        "R": 25.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.75,
+          0.5833333333333334,
+          0.9166666666666666
+        ],
+        "m": 0.12,
+        "s": 0.01,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 27,
+      "source_index": 37,
+      "slug": "stylomembranome_tardus_2",
+      "code": "4MeS3t",
+      "name": "Stylomembranome tardus",
+      "cname": "柱膜(緩)",
+      "dims": [
+        27,
+        27,
+        64
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/stylomembranome_tardus_2.f32",
+      "params": {
+        "R": 25.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667,
+          0.08333333333333333,
+          0.16666666666666666
+        ],
+        "m": 0.16,
+        "s": 0.011,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 28,
+      "source_index": 38,
+      "slug": "planomembranome_saliens",
+      "code": "2MePs",
+      "name": "Planomembranome saliens",
+      "cname": "平膜(躍)",
+      "dims": [
+        64,
+        26,
+        64
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/planomembranome_saliens.f32",
+      "params": {
+        "R": 25.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.17,
+        "s": 0.013,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 29,
+      "source_index": 39,
+      "slug": "planomembranome_lithos",
+      "code": "2MePl",
+      "name": "Planomembranome lithos",
+      "cname": "平膜(石)",
+      "dims": [
+        64,
+        22,
+        64
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/planomembranome_lithos.f32",
+      "params": {
+        "R": 25.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.4166666666666667
+        ],
+        "m": 0.12,
+        "s": 0.005,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 30,
+      "source_index": 40,
+      "slug": "planomembranome_inversus",
+      "code": "4MePa",
+      "name": "Planomembranome inversus",
+      "cname": "平膜(反)",
+      "dims": [
+        27,
+        64,
+        64
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/planomembranome_inversus.f32",
+      "params": {
+        "R": 20.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.75,
+          0.5833333333333334,
+          0.9166666666666666
+        ],
+        "m": 0.12,
+        "s": 0.007,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 31,
+      "source_index": 41,
+      "slug": "planomembranome_vagus",
+      "code": "4MePv",
+      "name": "Planomembranome vagus",
+      "cname": "平膜(遊)",
+      "dims": [
+        26,
+        64,
+        64
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/planomembranome_vagus.f32",
+      "params": {
+        "R": 20.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.75,
+          0.5833333333333334,
+          0.9166666666666666
+        ],
+        "m": 0.12,
+        "s": 0.008,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 32,
+      "source_index": 43,
+      "slug": "animal_32",
+      "code": "44",
+      "name": "Animal #32",
+      "cname": "",
+      "dims": [
+        36,
+        35,
+        36
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/animal_32.f32",
+      "params": {
+        "R": 14.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.3333333333333333
+        ],
+        "m": 0.22,
+        "s": 0.023,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 33,
+      "source_index": 44,
+      "slug": "animal_33",
+      "code": "57",
+      "name": "Animal #33",
+      "cname": "",
+      "dims": [
+        37,
+        40,
+        51
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/animal_33.f32",
+      "params": {
+        "R": 11.0,
+        "T": 10.0,
+        "b": [
+          1.0
+        ],
+        "m": 0.15,
+        "s": 0.019,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 34,
+      "source_index": 45,
+      "slug": "animal_34",
+      "code": "61",
+      "name": "Animal #34",
+      "cname": "",
+      "dims": [
+        19,
+        19,
+        20
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/animal_34.f32",
+      "params": {
+        "R": 13.0,
+        "T": 10.0,
+        "b": [
+          1.0,
+          0.6666666666666666,
+          0.0
+        ],
+        "m": 0.26,
+        "s": 0.034,
+        "kn": 1,
+        "gn": 1
+      }
+    },
+    {
+      "id": 35,
+      "source_index": 46,
+      "slug": "animal_35",
+      "code": "",
+      "name": "Animal #35",
+      "cname": "",
+      "dims": [
+        9,
+        9,
+        9
+      ],
+      "cells_file": "../../assets/cells/lenia3d_reference/animal_35.f32",
+      "params": {
+        "R": 13.0,
+        "T": 10.0,
+        "b": [
+          1.0
+        ],
+        "m": 0.15,
+        "s": 0.015,
+        "kn": 1,
+        "gn": 1
+      }
+    }
+  ]
+}
