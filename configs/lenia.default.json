@@ -1,0 +1,18 @@
+{
+  "source": "lenia",
+  "lenia": {
+    "playing": true,
+    "steps_per_frame": 1,
+    "resolution": 128,
+    "seed": 1,
+    "seed_preset": "reference_random_box",
+    "parameter_preset": "diguttome_saliens",
+    "params": {
+      "R": 10.0,
+      "T": 10.0,
+      "mu": 0.12,
+      "sigma": 0.01,
+      "b": [1.0, 0.75, 0.5833333, 0.9166667]
+    }
+  }
+}

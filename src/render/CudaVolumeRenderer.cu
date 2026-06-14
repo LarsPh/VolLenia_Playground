@@ -90,6 +90,7 @@ __global__ void raymarchKernel(
     }
 
     const float ndc_x = (2.0f * (static_cast<float>(x) + 0.5f) / static_cast<float>(width) - 1.0f);
+    // map PBO's 0 (top) to NDC 1 (top), 1 (bottom) to NDC -1 (bottom)
     const float ndc_y = (1.0f - 2.0f * (static_cast<float>(y) + 0.5f) / static_cast<float>(height));
     const float tan_half_fov = tanf(camera.fov_y_degrees * 0.00872664626f);
     const float3 direction = normalize3(add3(
@@ -173,25 +174,24 @@ CudaVolumeRenderer::~CudaVolumeRenderer() noexcept
     destroyNoThrow();
 }
 
-void CudaVolumeRenderer::setVolume(const SyntheticVolume& volume)
+void CudaVolumeRenderer::uploadVolume(DeviceVolumeView volume)
 {
-    if (!volume.isValid()) {
+    if (volume.data == nullptr || !isValidVolumeDesc(volume.desc)) {
         throw std::runtime_error("Cannot upload invalid volume to CUDA renderer");
     }
 
-    destroy();
-    volume_desc_ = volume.desc();
+    if (!hasTexture() || !volumeDescEquals(volume_desc_, volume.desc)) {
+        createTextureStorage(volume.desc);
+    }
 
-    const cudaChannelFormatDesc channel_desc = cudaCreateChannelDesc<float>();
     const cudaExtent extent = make_cudaExtent(
         static_cast<std::size_t>(volume_desc_.nx),
         static_cast<std::size_t>(volume_desc_.ny),
         static_cast<std::size_t>(volume_desc_.nz));
-    VOL_CUDA_CHECK(cudaMalloc3DArray(&array_, &channel_desc, extent));
 
     cudaMemcpy3DParms copy_params {};
     copy_params.srcPtr = make_cudaPitchedPtr(
-        const_cast<float*>(volume.deviceData()),
+        const_cast<float*>(volume.data),
         static_cast<std::size_t>(volume_desc_.nx) * sizeof(float),
         static_cast<std::size_t>(volume_desc_.nx),
         static_cast<std::size_t>(volume_desc_.ny));
@@ -199,6 +199,19 @@ void CudaVolumeRenderer::setVolume(const SyntheticVolume& volume)
     copy_params.extent = extent;
     copy_params.kind = cudaMemcpyDeviceToDevice;
     VOL_CUDA_CHECK(cudaMemcpy3D(&copy_params));
+}
+
+void CudaVolumeRenderer::createTextureStorage(VolumeDesc desc)
+{
+    destroy();
+    volume_desc_ = desc;
+
+    const cudaChannelFormatDesc channel_desc = cudaCreateChannelDesc<float>();
+    const cudaExtent extent = make_cudaExtent(
+        static_cast<std::size_t>(volume_desc_.nx),
+        static_cast<std::size_t>(volume_desc_.ny),
+        static_cast<std::size_t>(volume_desc_.nz));
+    VOL_CUDA_CHECK(cudaMalloc3DArray(&array_, &channel_desc, extent));
 
     cudaResourceDesc resource_desc {};
     resource_desc.resType = cudaResourceTypeArray;

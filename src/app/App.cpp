@@ -7,6 +7,7 @@
 #include "render/CudaVolumeRenderer.h"
 #include "render/GlDisplay.h"
 #include "render/SyntheticVolume.h"
+#include "sim/LeniaSimulation.h"
 
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -23,6 +24,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace vollenia {
 
@@ -67,6 +69,17 @@ VolumePreset presetFromString(const std::string& value, VolumePreset fallback)
     return fallback;
 }
 
+VolumeSource sourceFromString(const std::string& value, VolumeSource fallback)
+{
+    if (value == "synthetic") {
+        return VolumeSource::Synthetic;
+    }
+    if (value == "lenia") {
+        return VolumeSource::Lenia;
+    }
+    return fallback;
+}
+
 VolumeRenderMode renderModeFromString(const std::string& value, VolumeRenderMode fallback)
 {
     if (value == "emission_absorption") {
@@ -77,6 +90,40 @@ VolumeRenderMode renderModeFromString(const std::string& value, VolumeRenderMode
     }
     if (value == "first_hit") {
         return VolumeRenderMode::FirstHit;
+    }
+    return fallback;
+}
+
+LeniaSeedPreset leniaSeedPresetFromString(const std::string& value, LeniaSeedPreset fallback)
+{
+    if (value == "reference_random_box") {
+        return LeniaSeedPreset::ReferenceRandomBox;
+    }
+    if (value == "centered_random_ball") {
+        return LeniaSeedPreset::CenteredRandomBall;
+    }
+    if (value == "asymmetric_gaussian_cluster") {
+        return LeniaSeedPreset::AsymmetricGaussianCluster;
+    }
+    if (value == "shell_internal_blobs") {
+        return LeniaSeedPreset::ShellInternalBlobs;
+    }
+    if (value == "small_blob") {
+        return LeniaSeedPreset::SmallBlob;
+    }
+    return fallback;
+}
+
+LeniaParamPreset leniaParamPresetFromString(const std::string& value, LeniaParamPreset fallback)
+{
+    if (value == "diguttome_saliens") {
+        return LeniaParamPreset::DiguttomeSaliens;
+    }
+    if (value == "diguttome_tardus") {
+        return LeniaParamPreset::DiguttomeTardus;
+    }
+    if (value == "triguttome_labens") {
+        return LeniaParamPreset::TriguttomeLabens;
     }
     return fallback;
 }
@@ -101,6 +148,8 @@ int App::run()
 void App::initialize()
 {
     config_ = loadConfig("configs/app.default.json");
+    volume_source_ = config_.source;
+    loadLeniaConfig("configs/lenia.default.json");
     camera_.setSettings(config_.camera);
     render_params_ = config_.render;
     volume_preset_ = config_.preset;
@@ -146,6 +195,7 @@ void App::initialize()
     pbo_ = std::make_unique<CudaPbo>();
     display_ = std::make_unique<GlDisplay>();
     synthetic_volume_ = std::make_unique<SyntheticVolume>();
+    lenia_simulation_ = std::make_unique<LeniaSimulation>();
     volume_renderer_ = std::make_unique<CudaVolumeRenderer>();
     framebuffer_width_ = framebuffer_width;
     framebuffer_height_ = framebuffer_height;
@@ -191,16 +241,39 @@ void App::mainLoop()
             gl_version_text_,
             camera_,
             volume_status_,
+            lenia_status_,
+            volume_source_,
             render_enabled_,
             volume_preset_,
             volume_resolution_,
+            lenia_config_,
             render_params_,
             io.Framerate,
             frame_time_ms);
+        if (ui_result.source_changed) {
+            renderer_volume_dirty_ = true;
+        }
         if (ui_result.regenerate_volume) {
             ++volume_seed_;
             volume_dirty_ = true;
             renderer_volume_dirty_ = true;
+        }
+        if (ui_result.lenia_resolution_changed) {
+            lenia_sim_dirty_ = true;
+            renderer_volume_dirty_ = true;
+        }
+        if (ui_result.lenia_seed_preset_changed || ui_result.lenia_reset_seed) {
+            lenia_seed_dirty_ = true;
+        }
+        if (ui_result.lenia_regenerate_seed) {
+            ++lenia_config_.seed;
+            lenia_seed_dirty_ = true;
+        }
+        if (ui_result.lenia_param_preset_changed || ui_result.lenia_rebuild_kernel) {
+            lenia_kernel_dirty_ = true;
+        }
+        if (ui_result.lenia_single_step) {
+            lenia_single_step_requested_ = true;
         }
 
         VOL_GL_CHECK(glClearColor(0.025f, 0.035f, 0.045f, 1.0f));
@@ -251,6 +324,7 @@ void App::destroyRenderResources() noexcept
 {
     volume_renderer_.reset();
     synthetic_volume_.reset();
+    lenia_simulation_.reset();
     pbo_.reset();
     display_.reset();
     volume_status_.volume_valid = false;
@@ -325,11 +399,21 @@ void App::renderVolumeFrame()
         volume_status_.status = "PBO/display resources are not ready";
         return;
     }
-    if (synthetic_volume_ == nullptr) {
-        synthetic_volume_ = std::make_unique<SyntheticVolume>();
-    }
     if (volume_renderer_ == nullptr) {
         volume_renderer_ = std::make_unique<CudaVolumeRenderer>();
+    }
+
+    if (volume_source_ == VolumeSource::Lenia) {
+        renderLeniaVolumeFrame();
+    } else {
+        renderSyntheticVolumeFrame();
+    }
+}
+
+void App::renderSyntheticVolumeFrame()
+{
+    if (synthetic_volume_ == nullptr) {
+        synthetic_volume_ = std::make_unique<SyntheticVolume>();
     }
 
     if (volume_dirty_) {
@@ -343,16 +427,68 @@ void App::renderVolumeFrame()
         volume_status_.status = "Synthetic volume generated";
     }
 
-    if (renderer_volume_dirty_) {
-        volume_renderer_->setVolume(*synthetic_volume_);
-        renderer_volume_dirty_ = false;
-        volume_status_.status = "CUDA 3D texture ready";
+    drawUploadedVolume(synthetic_volume_->view(), "Rendering synthetic volume");
+    renderer_volume_dirty_ = false;
+}
+
+void App::renderLeniaVolumeFrame()
+{
+    if (lenia_simulation_ == nullptr) {
+        lenia_simulation_ = std::make_unique<LeniaSimulation>();
     }
 
-    volume_status_.volume_valid = synthetic_volume_->isValid();
+    const int resolution = std::clamp(lenia_config_.resolution, 16, 256);
+    lenia_config_.resolution = resolution;
+    const VolumeDesc desc {resolution, resolution, resolution};
+
+    if (lenia_sim_dirty_ || !lenia_simulation_->isInitialized()) {
+        lenia_simulation_->initialize(desc, lenia_config_.params, lenia_config_.seed_preset, lenia_config_.seed);
+        lenia_sim_dirty_ = false;
+        lenia_seed_dirty_ = false;
+        lenia_kernel_dirty_ = false;
+    } else {
+        lenia_simulation_->setParams(lenia_config_.params);
+        if (lenia_seed_dirty_) {
+            lenia_simulation_->resetSeed(lenia_config_.seed_preset, lenia_config_.seed);
+            lenia_seed_dirty_ = false;
+        }
+        if (lenia_kernel_dirty_ || lenia_simulation_->kernelDirty()) {
+            lenia_simulation_->rebuildKernel();
+            lenia_kernel_dirty_ = false;
+        }
+    }
+
+    int steps = 0;
+    if (lenia_config_.playing) {
+        steps += std::clamp(lenia_config_.steps_per_frame, 0, 32);
+    }
+    if (lenia_single_step_requested_) {
+        ++steps;
+        lenia_single_step_requested_ = false;
+    }
+    if (steps > 0) {
+        lenia_simulation_->simulateSteps(steps);
+    }
+
+    lenia_status_ = lenia_simulation_->status();
+    lenia_status_.playing = lenia_config_.playing;
+    if (lenia_status_.last_step_had_invalid_values) {
+        lenia_config_.playing = false;
+        lenia_status_.playing = false;
+    }
+
+    drawUploadedVolume(lenia_simulation_->currentStateView(), "Rendering Lenia simulation");
+    lenia_status_ = lenia_simulation_->status();
+    lenia_status_.playing = lenia_config_.playing;
+}
+
+void App::drawUploadedVolume(DeviceVolumeView volume, const char* status_text)
+{
+    volume_renderer_->uploadVolume(volume);
+    volume_status_.volume_valid = volume.data != nullptr && isValidVolumeDesc(volume.desc);
     volume_status_.texture_valid = volume_renderer_->hasTexture();
-    volume_status_.volume_desc = synthetic_volume_->desc();
-    volume_status_.volume_bytes = synthetic_volume_->byteSize();
+    volume_status_.volume_desc = volume.desc;
+    volume_status_.volume_bytes = volumeByteSize(volume.desc);
 
     bool mapped = false;
     try {
@@ -371,7 +507,7 @@ void App::renderVolumeFrame()
         mapped = false;
 
         display_->drawPbo(pbo_->glBuffer(), framebuffer_width_, framebuffer_height_);
-        volume_status_.status = "Rendering synthetic volume";
+        volume_status_.status = status_text;
         volume_status_.last_error.clear();
     } catch (...) {
         if (mapped) {
@@ -425,8 +561,59 @@ AppConfig App::loadConfig(const std::string& path) const
     const int resolution = jsonValueOr(volume, "resolution", config.volume.nx);
     config.volume = VolumeDesc {resolution, resolution, resolution};
     config.preset = presetFromString(jsonValueOr(volume, "preset", std::string("lenia_phantom")), config.preset);
+    config.source = sourceFromString(jsonValueOr(root, "source", std::string("lenia")), config.source);
 
     return config;
+}
+
+void App::loadLeniaConfig(const std::string& path)
+{
+    const std::filesystem::path config_path(path);
+    if (!std::filesystem::exists(config_path)) {
+        return;
+    }
+
+    std::ifstream input(config_path);
+    if (!input) {
+        throw std::runtime_error("Failed to open config file: " + path);
+    }
+
+    nlohmann::json root;
+    input >> root;
+
+    volume_source_ = sourceFromString(jsonValueOr(root, "source", std::string(volumeSourceName(volume_source_))), volume_source_);
+
+    const nlohmann::json lenia = root.value("lenia", nlohmann::json::object());
+    lenia_config_.playing = jsonValueOr(lenia, "playing", lenia_config_.playing);
+    lenia_config_.steps_per_frame = std::clamp(jsonValueOr(lenia, "steps_per_frame", lenia_config_.steps_per_frame), 0, 32);
+    lenia_config_.resolution = jsonValueOr(lenia, "resolution", lenia_config_.resolution);
+    lenia_config_.seed = jsonValueOr(lenia, "seed", lenia_config_.seed);
+    lenia_config_.seed_preset = leniaSeedPresetFromString(
+        jsonValueOr(lenia, "seed_preset", std::string("reference_random_box")),
+        lenia_config_.seed_preset);
+    lenia_config_.param_preset = leniaParamPresetFromString(
+        jsonValueOr(lenia, "parameter_preset", std::string("diguttome_saliens")),
+        lenia_config_.param_preset);
+    lenia_config_.params = leniaParamsForPreset(lenia_config_.param_preset);
+
+    const nlohmann::json params = lenia.value("params", nlohmann::json::object());
+    lenia_config_.params.radius = jsonValueOr(params, "R", lenia_config_.params.radius);
+    lenia_config_.params.T = jsonValueOr(params, "T", lenia_config_.params.T);
+    lenia_config_.params.mu = jsonValueOr(params, "mu", lenia_config_.params.mu);
+    lenia_config_.params.sigma = jsonValueOr(params, "sigma", lenia_config_.params.sigma);
+    if (params.is_object() && params.contains("b") && params.at("b").is_array()) {
+        int shell_count = 0;
+        for (const nlohmann::json& value : params.at("b")) {
+            if (shell_count >= static_cast<int>(lenia_config_.params.shell_weights.size())) {
+                break;
+            }
+            lenia_config_.params.shell_weights[static_cast<std::size_t>(shell_count)] = value.get<float>();
+            ++shell_count;
+        }
+        if (shell_count > 0) {
+            lenia_config_.params.shell_count = shell_count;
+        }
+    }
 }
 
 CudaDeviceInfo App::queryCudaDeviceInfo() const

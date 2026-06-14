@@ -2,6 +2,7 @@
 
 #include "app/Camera.h"
 #include "render/RenderParams.h"
+#include "sim/LeniaParams.h"
 
 #include <cstddef>
 #include <memory>
@@ -14,6 +15,7 @@ namespace vollenia {
 class CudaPbo;
 class CudaVolumeRenderer;
 class GlDisplay;
+class LeniaSimulation;
 class SyntheticVolume;
 
 struct WindowConfig {
@@ -28,6 +30,17 @@ struct AppConfig {
     RenderParams render;
     VolumeDesc volume;
     VolumePreset preset = VolumePreset::LeniaPhantom;
+    VolumeSource source = VolumeSource::Lenia;
+};
+
+struct LeniaConfig {
+    bool playing = true;
+    int steps_per_frame = 1;
+    int resolution = 128;
+    unsigned int seed = 1;
+    LeniaSeedPreset seed_preset = LeniaSeedPreset::ReferenceRandomBox;
+    LeniaParamPreset param_preset = LeniaParamPreset::DiguttomeSaliens;
+    LeniaParams params = leniaParamsForPreset(LeniaParamPreset::DiguttomeSaliens);
 };
 
 struct CudaDeviceInfo {
@@ -60,8 +73,12 @@ private:
     void updateFramebufferResources();
     void handleCameraInput();
     void renderVolumeFrame();
+    void renderSyntheticVolumeFrame();
+    void renderLeniaVolumeFrame();
+    void drawUploadedVolume(DeviceVolumeView volume, const char* status_text);
 
     [[nodiscard]] AppConfig loadConfig(const std::string& path) const; // nodiscard since return something important
+    void loadLeniaConfig(const std::string& path);
     [[nodiscard]] CudaDeviceInfo queryCudaDeviceInfo() const;
 
     AppConfig config_;
@@ -71,16 +88,24 @@ private:
     std::unique_ptr<CudaVolumeRenderer> volume_renderer_;
     std::unique_ptr<GlDisplay> display_;
     std::unique_ptr<SyntheticVolume> synthetic_volume_;
+    std::unique_ptr<LeniaSimulation> lenia_simulation_;
     GLFWwindow* window_ = nullptr;
     const char* gl_version_text_ = "Unavailable";
     RenderParams render_params_;
     VolumeRenderStatus volume_status_;
+    LeniaConfig lenia_config_;
+    LeniaStatus lenia_status_;
+    VolumeSource volume_source_ = VolumeSource::Lenia;
     VolumePreset volume_preset_ = VolumePreset::LeniaPhantom;
     int volume_resolution_ = 128;
     unsigned int volume_seed_ = 1;
     bool render_enabled_ = true;
     bool volume_dirty_ = true;
     bool renderer_volume_dirty_ = true;
+    bool lenia_sim_dirty_ = true;
+    bool lenia_seed_dirty_ = true;
+    bool lenia_kernel_dirty_ = true;
+    bool lenia_single_step_requested_ = false;
     int framebuffer_width_ = 0;
     int framebuffer_height_ = 0;
     float animation_time_seconds_ = 0.0f;

@@ -1,8 +1,9 @@
 #pragma once
 
+#include "core/VolumeDesc.h"
+
 #include <cuda_runtime.h>
 
-#include <cstddef>
 #include <string>
 
 namespace vollenia {
@@ -19,12 +20,6 @@ enum class VolumeRenderMode {
     EmissionAbsorption = 0,
     MIP,
     FirstHit,
-};
-
-struct VolumeDesc {
-    int nx = 128;
-    int ny = 128;
-    int nz = 128;
 };
 
 struct RenderParams {

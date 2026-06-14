@@ -23,6 +23,7 @@ public:
     [[nodiscard]] const VolumeDesc& desc() const { return desc_; }
     [[nodiscard]] const float* deviceData() const { return data_; }
     [[nodiscard]] float* deviceData() { return data_; }
+    [[nodiscard]] DeviceVolumeView view() const { return DeviceVolumeView {desc_, data_}; }
     [[nodiscard]] std::size_t voxelCount() const;
     [[nodiscard]] std::size_t byteSize() const { return voxelCount() * sizeof(float); }
     [[nodiscard]] bool isValid() const { return data_ != nullptr && desc_.nx > 0 && desc_.ny > 0 && desc_.nz > 0; }

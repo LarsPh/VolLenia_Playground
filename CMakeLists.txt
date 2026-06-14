@@ -132,6 +132,9 @@ add_executable(VolLenia_Playground
     src/render/GlDisplay.cpp
     src/render/PboSmokeTest.cu
     src/render/SyntheticVolume.cu
+    src/sim/DeviceVolume.cu
+    src/sim/LeniaSeeds.cu
+    src/sim/LeniaSimulation.cu
 )
 
 target_include_directories(VolLenia_Playground PRIVATE
@@ -145,6 +148,7 @@ target_compile_definitions(VolLenia_Playground PRIVATE
 
 target_link_libraries(VolLenia_Playground PRIVATE
     CUDA::cudart
+    CUDA::cufft
     OpenGL::GL
     glfw
     glad_gl_core_33
