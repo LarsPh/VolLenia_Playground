@@ -70,3 +70,21 @@ cmake --build build-sm89 --config Release
 ## Configuration
 
 The app reads `configs/app.default.json` when present. If the file is missing, built-in defaults are used. Invalid JSON is treated as a startup error.
+
+## Lenia3D reference cells
+
+The repository commits the Lenia3D catalog manifest at `configs/lenia3d_reference/animals.json`, but raw `.f32` cell assets under `assets/cells/lenia3d_reference/` are generated data and are ignored by Git.
+
+After a fresh clone, regenerate the `.f32` files from the committed manifest:
+
+```powershell
+uv run python scripts/convert_lenia3d_animals.py --manifest configs\lenia3d_reference\animals.json --cells-dir assets\cells\lenia3d_reference
+```
+
+This script currently uses only the Python standard library. `uv run python` is the recommended launcher for consistency, but the project does not need a `pyproject.toml` yet. If the Python tooling grows real third-party dependencies later, adding `pyproject.toml` would be the right time to make that environment explicit.
+
+To refresh the manifest from the external Lenia3D reference checkout, pass `--input`:
+
+```powershell
+uv run python scripts\convert_lenia3d_animals.py --input D:\projects\Lenia3D\src\data\animals3D.js --manifest configs\lenia3d_reference\animals.json --cells-dir assets\cells\lenia3d_reference --limit 0
+```

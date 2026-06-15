@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert Lenia3D animals3D.js entries into a JSON manifest and raw f32 cells."""
+"""Convert Lenia3D animal entries into a JSON manifest and raw f32 cells."""
 
 from __future__ import annotations
 
@@ -17,7 +17,12 @@ DIM = 3
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=Path(r"D:\projects\Lenia3D\src\data\animals3D.js"))
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=None,
+        help="Optional Lenia3D animals3D.js path. If omitted, regenerate .f32 files from the existing manifest.",
+    )
     parser.add_argument("--manifest", type=Path, default=Path("configs/lenia3d_reference/animals.json"))
     parser.add_argument("--cells-dir", type=Path, default=Path("assets/cells/lenia3d_reference"))
     parser.add_argument("--limit", type=int, default=0, help="Maximum number of animals to export; 0 exports all.")
@@ -135,11 +140,28 @@ def write_f32(path: Path, values: list[float]) -> None:
         output.write(struct.pack(f"<{len(values)}f", *values))
 
 
-def convert(args: argparse.Namespace) -> dict:
-    source_entries = extract_animal_array(args.input)
-    args.manifest.parent.mkdir(parents=True, exist_ok=True)
-    args.cells_dir.mkdir(parents=True, exist_ok=True)
+def relative_cells_path(cells_path: Path, manifest_path: Path) -> str:
+    try:
+        return cells_path.resolve().relative_to(manifest_path.parent.resolve()).as_posix()
+    except ValueError:
+        rel_cells_path = Path("../../") / cells_path
+        return rel_cells_path.as_posix()
 
+
+def decode_cells_rle(cells_rle: str, label: str) -> tuple[list[float], list[int]]:
+    cells, dims = rle_to_array(cells_rle)
+    flat = flatten_x_fastest(cells)
+    expected = dims[0] * dims[1] * dims[2]
+    if len(flat) != expected:
+        raise ValueError(f"{label} decoded to {len(flat)} values, expected {expected}")
+    return flat, dims
+
+
+def convert_from_js(args: argparse.Namespace) -> dict:
+    if args.input is None:
+        raise ValueError("convert_from_js requires --input")
+
+    source_entries = extract_animal_array(args.input)
     animals: list[dict] = []
     used_slugs: set[str] = set()
     for source_index, entry in enumerate(source_entries):
@@ -148,25 +170,15 @@ def convert(args: argparse.Namespace) -> dict:
         if args.limit > 0 and len(animals) >= args.limit:
             break
 
-        cells, dims = rle_to_array(entry["cells"])
-        flat = flatten_x_fastest(cells)
-        expected = dims[0] * dims[1] * dims[2]
-        if len(flat) != expected:
-            raise ValueError(f"{entry.get('name', source_index)} decoded to {len(flat)} values, expected {expected}")
-
         display_name = str(entry.get("name", "")).strip()
         if not display_name:
             display_name = f"Animal #{len(animals)}"
         slug_source = display_name if display_name else str(entry.get("code", f"animal_{source_index}"))
         slug = slugify(slug_source, used_slugs)
+        cells_rle = str(entry["cells"])
+        flat, dims = decode_cells_rle(cells_rle, display_name)
         cells_path = args.cells_dir / f"{slug}.f32"
         write_f32(cells_path, flat)
-        rel_cells_path = cells_path.relative_to(args.manifest.parent).as_posix() if cells_path.is_relative_to(args.manifest.parent) else cells_path.as_posix()
-        try:
-            rel_cells_path = cells_path.resolve().relative_to(args.manifest.parent.resolve()).as_posix()
-        except ValueError:
-            rel_cells_path = Path("../../") / cells_path
-            rel_cells_path = rel_cells_path.as_posix()
 
         params = entry["params"]
         animal = {
@@ -177,7 +189,8 @@ def convert(args: argparse.Namespace) -> dict:
             "name": display_name,
             "cname": entry.get("cname", ""),
             "dims": dims,
-            "cells_file": rel_cells_path,
+            "cells_file": relative_cells_path(cells_path, args.manifest),
+            "cells_rle": cells_rle,
             "params": {
                 "R": float(params.get("R", 10.0)),
                 "T": float(params.get("T", 10.0)),
@@ -196,6 +209,52 @@ def convert(args: argparse.Namespace) -> dict:
         "layout": "x-fastest",
         "animals": animals,
     }
+    return manifest
+
+
+def regenerate_cells_from_manifest(args: argparse.Namespace) -> dict:
+    if not args.manifest.exists():
+        raise FileNotFoundError(f"Manifest not found: {args.manifest}")
+
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    animals = manifest.get("animals", [])
+    if not isinstance(animals, list):
+        raise ValueError(f"Manifest animals field is not a list: {args.manifest}")
+
+    for animal in animals:
+        if not isinstance(animal, dict):
+            continue
+        cells_rle = animal.get("cells_rle")
+        if not isinstance(cells_rle, str) or not cells_rle:
+            raise ValueError(
+                "Manifest does not contain cells_rle for every animal; rerun once with --input pointing to animals3D.js"
+            )
+        label = str(animal.get("name") or animal.get("slug") or animal.get("id"))
+        flat, dims = decode_cells_rle(cells_rle, label)
+        if list(animal.get("dims", [])) != dims:
+            raise ValueError(f"{label} decoded dimensions {dims} do not match manifest dims {animal.get('dims')}")
+
+        cells_file = animal.get("cells_file")
+        if isinstance(cells_file, str) and cells_file:
+            cells_path = (args.manifest.parent / cells_file).resolve()
+        else:
+            slug = str(animal.get("slug") or f"animal_{animal.get('id')}")
+            cells_path = args.cells_dir / f"{slug}.f32"
+            animal["cells_file"] = relative_cells_path(cells_path, args.manifest)
+        write_f32(cells_path, flat)
+
+    return manifest
+
+
+def convert(args: argparse.Namespace) -> dict:
+    args.manifest.parent.mkdir(parents=True, exist_ok=True)
+    args.cells_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.input is not None:
+        manifest = convert_from_js(args)
+    else:
+        manifest = regenerate_cells_from_manifest(args)
+
     args.manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return manifest
 
