@@ -5,6 +5,9 @@
     "steps_per_frame": 1,
     "resolution": 128,
     "seed": 1,
+    "imported_cell_scale": 4.0,
+    "auto_scale_imported_R": true,
+    "cell_resample_mode": "trilinear",
     "seed_preset": "reference_random_box",
     "parameter_preset": "diguttome_saliens",
     "params": {

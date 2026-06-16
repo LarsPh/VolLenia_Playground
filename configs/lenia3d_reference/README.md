@@ -20,4 +20,4 @@ The `.f32` files use little-endian float32 values in the project layout:
 index = (z * ny + y) * nx + x
 ```
 
-Imported cell volumes are center-padded into the simulation grid at runtime; they are not stretched.
+Original imported cell volumes are center-padded into the simulation grid at runtime. The app also provides an optional GPU resampling path that scales only the imported animal body first, then center-pads the scaled body into the current simulation grid.

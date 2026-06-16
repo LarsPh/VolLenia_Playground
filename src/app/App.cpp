@@ -3,6 +3,7 @@
 #include "app/UiPanel.h"
 #include "core/CudaCheck.h"
 #include "core/GlCheck.h"
+#include "io/CellResampler.h"
 #include "io/CellVolumeFile.h"
 #include "render/CudaPbo.h"
 #include "render/CudaVolumeRenderer.h"
@@ -21,6 +22,7 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -160,6 +162,45 @@ GrowthFunctionType growthFunctionFromInt(int value, GrowthFunctionType fallback)
     }
 }
 
+CellResampleMode cellResampleModeFromString(const std::string& value, CellResampleMode fallback)
+{
+    if (value == "nearest") {
+        return CellResampleMode::Nearest;
+    }
+    if (value == "trilinear") {
+        return CellResampleMode::Trilinear;
+    }
+    return fallback;
+}
+
+void configureImGuiFonts(ImGuiIO& io)
+{
+    static ImVector<ImWchar> cjk_ranges;
+    if (cjk_ranges.empty()) {
+        ImFontGlyphRangesBuilder builder;
+        builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
+        builder.AddRanges(io.Fonts->GetGlyphRangesChineseFull());
+        builder.AddRanges(io.Fonts->GetGlyphRangesJapanese());
+        builder.BuildRanges(&cjk_ranges);
+    }
+
+    constexpr std::array<const char*, 3> font_candidates {
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/simsun.ttc",
+    };
+    for (const char* font_path : font_candidates) {
+        if (!std::filesystem::exists(font_path)) {
+            continue;
+        }
+        if (io.Fonts->AddFontFromFileTTF(font_path, 16.0f, nullptr, cjk_ranges.Data) != nullptr) {
+            return;
+        }
+    }
+
+    io.Fonts->AddFontDefault();
+}
+
 } // namespace
 
 App::App() = default;
@@ -237,6 +278,7 @@ void App::initialize()
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    configureImGuiFonts(io);
     ImGui::StyleColorsDark();
 
     if (!ImGui_ImplGlfw_InitForOpenGL(window_, true)) {
@@ -304,12 +346,14 @@ void App::mainLoop()
         if (ui_result.lenia_seed_preset_changed || ui_result.lenia_reset_seed) {
             lenia_config_.cells_source = LeniaCellsSource::Procedural;
             lenia_config_.cells_source_animal_index = -1;
+            lenia_config_.imported_cells_scaled = false;
             lenia_seed_dirty_ = true;
         }
         if (ui_result.lenia_regenerate_seed) {
             ++lenia_config_.seed;
             lenia_config_.cells_source = LeniaCellsSource::Procedural;
             lenia_config_.cells_source_animal_index = -1;
+            lenia_config_.imported_cells_scaled = false;
             lenia_seed_dirty_ = true;
         }
         if (ui_result.lenia_param_preset_changed || ui_result.lenia_rebuild_kernel) {
@@ -319,18 +363,28 @@ void App::mainLoop()
             lenia_single_step_requested_ = true;
         }
         if (ui_result.lenia_load_animal) {
-            loadAnimalCells(lenia_config_.selected_animal_index);
-            applyAnimalParams(lenia_config_.selected_animal_index);
+            loadAnimalCells(lenia_config_.selected_animal_index, false);
+            applyAnimalParams(lenia_config_.selected_animal_index, false);
+            volume_source_ = VolumeSource::Lenia;
+            renderer_volume_dirty_ = true;
+        } else if (ui_result.lenia_load_scaled_animal) {
+            loadAnimalCells(lenia_config_.selected_animal_index, true);
+            applyAnimalParams(lenia_config_.selected_animal_index, lenia_config_.auto_scale_imported_R);
             volume_source_ = VolumeSource::Lenia;
             renderer_volume_dirty_ = true;
         } else {
             if (ui_result.lenia_apply_cells_only) {
-                loadAnimalCells(lenia_config_.selected_animal_index);
+                loadAnimalCells(lenia_config_.selected_animal_index, false);
+                volume_source_ = VolumeSource::Lenia;
+                renderer_volume_dirty_ = true;
+            }
+            if (ui_result.lenia_apply_scaled_cells_only) {
+                loadAnimalCells(lenia_config_.selected_animal_index, true);
                 volume_source_ = VolumeSource::Lenia;
                 renderer_volume_dirty_ = true;
             }
             if (ui_result.lenia_apply_params_only) {
-                applyAnimalParams(lenia_config_.selected_animal_index);
+                applyAnimalParams(lenia_config_.selected_animal_index, false);
                 volume_source_ = VolumeSource::Lenia;
                 renderer_volume_dirty_ = true;
             }
@@ -385,6 +439,8 @@ void App::destroyRenderResources() noexcept
     volume_renderer_.reset();
     synthetic_volume_.reset();
     lenia_simulation_.reset();
+    scaled_imported_cells_.reset();
+    imported_cells_.reset();
     pbo_.reset();
     display_.reset();
     volume_status_.volume_valid = false;
@@ -518,7 +574,8 @@ void App::renderLeniaVolumeFrame()
         }
     }
     if (lenia_imported_cells_dirty_ && imported_cells_ != nullptr) {
-        lenia_simulation_->resetImportedCells(imported_cells_->view());
+        DeviceVolume* cells = scaled_imported_cells_ != nullptr ? scaled_imported_cells_.get() : imported_cells_.get();
+        lenia_simulation_->resetImportedCells(cells->view());
         lenia_imported_cells_dirty_ = false;
         lenia_seed_dirty_ = false;
     }
@@ -532,7 +589,7 @@ void App::renderLeniaVolumeFrame()
         lenia_single_step_requested_ = false;
     }
     if (steps > 0) {
-        lenia_simulation_->simulateSteps(steps, lenia_config_.validate_nan_inf_every_step);
+        lenia_simulation_->simulateSteps(steps);
     }
 
     lenia_status_ = lenia_simulation_->status();
@@ -547,7 +604,7 @@ void App::renderLeniaVolumeFrame()
     lenia_status_.playing = lenia_config_.playing;
 }
 
-void App::loadAnimalCells(int animal_index)
+void App::loadAnimalCells(int animal_index, bool scaled)
 {
     if (animal_catalog_.count() <= 0) {
         volume_status_.last_error = "No Lenia animal catalog is loaded.";
@@ -559,13 +616,26 @@ void App::loadAnimalCells(int animal_index)
         imported_cells_ = std::make_unique<DeviceVolume>();
     }
     CellVolumeFile::loadToDevice(*imported_cells_, animal.cells_file, animal.cells_desc);
+    if (scaled) {
+        if (scaled_imported_cells_ == nullptr) {
+            scaled_imported_cells_ = std::make_unique<DeviceVolume>();
+        }
+        CellResampler::resampleToDevice(
+            *scaled_imported_cells_,
+            imported_cells_->view(),
+            std::clamp(lenia_config_.imported_cell_scale, 1.0f, 8.0f),
+            lenia_config_.cell_resample_mode);
+    } else {
+        scaled_imported_cells_.reset();
+    }
+    lenia_config_.imported_cells_scaled = scaled;
     lenia_config_.selected_animal_index = animal_index;
     lenia_config_.cells_source = LeniaCellsSource::Imported;
     lenia_config_.cells_source_animal_index = animal_index;
     lenia_imported_cells_dirty_ = true;
 }
 
-void App::applyAnimalParams(int animal_index)
+void App::applyAnimalParams(int animal_index, bool scale_radius)
 {
     if (animal_catalog_.count() <= 0) {
         volume_status_.last_error = "No Lenia animal catalog is loaded.";
@@ -575,6 +645,9 @@ void App::applyAnimalParams(int animal_index)
     const LeniaAnimalPreset& animal = animal_catalog_.animal(animal_index);
     lenia_config_.selected_animal_index = animal_index;
     lenia_config_.params = animal.params;
+    if (scale_radius) {
+        lenia_config_.params.radius *= std::clamp(lenia_config_.imported_cell_scale, 1.0f, 8.0f);
+    }
     lenia_config_.params_source = LeniaParamsSource::Animal;
     lenia_config_.params_source_animal_index = animal_index;
     lenia_kernel_dirty_ = true;
@@ -683,10 +756,14 @@ void App::loadLeniaConfig(const std::string& path)
 
     const nlohmann::json lenia = root.value("lenia", nlohmann::json::object());
     lenia_config_.playing = jsonValueOr(lenia, "playing", lenia_config_.playing);
-    lenia_config_.validate_nan_inf_every_step = jsonValueOr(lenia, "validate_nan_inf_every_step", lenia_config_.validate_nan_inf_every_step);
     lenia_config_.steps_per_frame = std::clamp(jsonValueOr(lenia, "steps_per_frame", lenia_config_.steps_per_frame), 0, 32);
     lenia_config_.resolution = jsonValueOr(lenia, "resolution", lenia_config_.resolution);
     lenia_config_.seed = jsonValueOr(lenia, "seed", lenia_config_.seed);
+    lenia_config_.imported_cell_scale = std::clamp(jsonValueOr(lenia, "imported_cell_scale", lenia_config_.imported_cell_scale), 1.0f, 8.0f);
+    lenia_config_.auto_scale_imported_R = jsonValueOr(lenia, "auto_scale_imported_R", lenia_config_.auto_scale_imported_R);
+    lenia_config_.cell_resample_mode = cellResampleModeFromString(
+        jsonValueOr(lenia, "cell_resample_mode", std::string("trilinear")),
+        lenia_config_.cell_resample_mode);
     lenia_config_.seed_preset = leniaSeedPresetFromString(
         jsonValueOr(lenia, "seed_preset", std::string("reference_random_box")),
         lenia_config_.seed_preset);

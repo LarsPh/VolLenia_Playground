@@ -127,6 +127,16 @@ int growthFunctionTypeToIndex(GrowthFunctionType type)
     return std::clamp(static_cast<int>(type) - 1, 0, 2);
 }
 
+CellResampleMode indexToCellResampleMode(int index)
+{
+    return index == 0 ? CellResampleMode::Nearest : CellResampleMode::Trilinear;
+}
+
+int cellResampleModeToIndex(CellResampleMode mode)
+{
+    return mode == CellResampleMode::Nearest ? 0 : 1;
+}
+
 std::string animalNameOr(const LeniaAnimalCatalog& catalog, int index, const char* fallback)
 {
     if (catalog.isLoaded() && index >= 0 && index < catalog.count()) {
@@ -141,7 +151,8 @@ std::string cellsSourceLabel(const LeniaConfig& config, const LeniaAnimalCatalog
     case LeniaCellsSource::Procedural:
         return std::string("Procedural: ") + leniaSeedPresetName(config.seed_preset);
     case LeniaCellsSource::Imported:
-        return "Animal: " + animalNameOr(catalog, config.cells_source_animal_index, "unknown");
+        return std::string(config.imported_cells_scaled ? "Animal scaled: " : "Animal: ")
+            + animalNameOr(catalog, config.cells_source_animal_index, "unknown");
     case LeniaCellsSource::Modified:
         if (config.cells_source_animal_index >= 0) {
             return "Modified from " + animalNameOr(catalog, config.cells_source_animal_index, "animal");
@@ -205,7 +216,7 @@ UiPanelResult UiPanel::render(
     const ImVec2 status_size(360.0f, 300.0f);
     const ImVec2 display_size(360.0f, 360.0f);
     const ImVec2 sim_size(430.0f, 520.0f);
-    const ImVec2 catalog_size(430.0f, 410.0f);
+    const ImVec2 catalog_size(460.0f, 500.0f);
 
     ImGui::SetNextWindowPos(ImVec2(work_pos.x + margin, work_pos.y + margin), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(status_size, ImGuiCond_FirstUseEver);
@@ -318,7 +329,6 @@ UiPanelResult UiPanel::render(
             result.lenia_regenerate_seed = true;
         }
         ImGui::SliderInt("Steps per frame", &lenia_config.steps_per_frame, 0, 32);
-        ImGui::Checkbox("Validate NaN/Inf every step", &lenia_config.validate_nan_inf_every_step);
 
         const std::array<int, 6> resolutions {64, 96, 128, 160, 192, 256};
         int resolution_index = resolutionToIndex(lenia_config.resolution, resolutions);
@@ -455,16 +465,41 @@ UiPanelResult UiPanel::render(
         ImGui::Text("Code: %s", animal.code.c_str());
         ImGui::Text("Source index: %d", animal.source_index);
         ImGui::Text("Name: %s", animal.display_name.c_str());
+        if (!animal.cname.empty()) {
+            ImGui::TextWrapped("CName: %s", animal.cname.c_str());
+        }
         ImGui::Text("Cells dims: %d x %d x %d", animal.cells_desc.nx, animal.cells_desc.ny, animal.cells_desc.nz);
         ImGui::Text("R %.2f  T %.2f  m %.4f  s %.4f", animal.params.radius, animal.params.T, animal.params.mu, animal.params.sigma);
         ImGui::Text("Kernel: %s", kernelCoreTypeName(animal.params.kernel_core));
         ImGui::Text("Growth: %s", growthFunctionTypeName(animal.params.growth_function));
+        ImGui::Separator();
+        ImGui::SliderFloat("Imported cells scale", &lenia_config.imported_cell_scale, 1.0f, 8.0f, "%.2f");
+        int resample_mode_index = cellResampleModeToIndex(lenia_config.cell_resample_mode);
+        const char* resample_mode_names[] = {
+            cellResampleModeName(CellResampleMode::Nearest),
+            cellResampleModeName(CellResampleMode::Trilinear),
+        };
+        if (ImGui::Combo("Resample mode", &resample_mode_index, resample_mode_names, IM_ARRAYSIZE(resample_mode_names))) {
+            lenia_config.cell_resample_mode = indexToCellResampleMode(resample_mode_index);
+        }
+        ImGui::Checkbox("Auto-scale R with cells", &lenia_config.auto_scale_imported_R);
+        ImGui::Text(
+            "Scaled dims: %d x %d x %d",
+            std::max(1, static_cast<int>(animal.cells_desc.nx * lenia_config.imported_cell_scale + 0.5f)),
+            std::max(1, static_cast<int>(animal.cells_desc.ny * lenia_config.imported_cell_scale + 0.5f)),
+            std::max(1, static_cast<int>(animal.cells_desc.nz * lenia_config.imported_cell_scale + 0.5f)));
         if (ImGui::Button("Load initial state + rule")) {
             result.lenia_load_animal = true;
         }
-        ImGui::SameLine();
+        if (ImGui::Button("Load scaled state + scaled rule")) {
+            result.lenia_load_scaled_animal = true;
+        }
         if (ImGui::Button("Apply cells only")) {
             result.lenia_apply_cells_only = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Apply scaled cells only")) {
+            result.lenia_apply_scaled_cells_only = true;
         }
         if (ImGui::Button("Apply rule only")) {
             result.lenia_apply_params_only = true;

@@ -16,7 +16,9 @@ struct UiPanelResult {
     bool lenia_seed_preset_changed = false;
     bool lenia_param_preset_changed = false;
     bool lenia_load_animal = false;
+    bool lenia_load_scaled_animal = false;
     bool lenia_apply_cells_only = false;
+    bool lenia_apply_scaled_cells_only = false;
     bool lenia_apply_params_only = false;
 };
 

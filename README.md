@@ -71,6 +71,16 @@ cmake --build build-sm89 --config Release
 
 The app reads `configs/app.default.json` when present. If the file is missing, built-in defaults are used. Invalid JSON is treated as a startup error.
 
+## Python tools
+
+Python utility scripts use the project `pyproject.toml` and are intended to run through `uv`:
+
+```powershell
+uv sync
+```
+
+These tools are independent from the C++/CUDA CMake build. CMake still manages its own build-local Python environment for the GLAD generator.
+
 ## Lenia3D reference cells
 
 The repository commits the Lenia3D catalog manifest at `configs/lenia3d_reference/animals.json`, but raw `.f32` cell assets under `assets/cells/lenia3d_reference/` are generated data and are ignored by Git.
@@ -81,12 +91,28 @@ After a fresh clone, regenerate the `.f32` files from the committed manifest:
 uv run python scripts/convert_lenia3d_animals.py --manifest configs\lenia3d_reference\animals.json --cells-dir assets\cells\lenia3d_reference
 ```
 
-This script currently uses only the Python standard library. `uv run python` is the recommended launcher for consistency, but the project does not need a `pyproject.toml` yet. If the Python tooling grows real third-party dependencies later, adding `pyproject.toml` would be the right time to make that environment explicit.
+The converter currently uses only the Python standard library, but it is still run through `uv` so all project scripts share the same launcher.
 
 To refresh the manifest from the external Lenia3D reference checkout, pass `--input`:
 
 ```powershell
 uv run python scripts\convert_lenia3d_animals.py --input D:\projects\Lenia3D\src\data\animals3D.js --manifest configs\lenia3d_reference\animals.json --cells-dir assets\cells\lenia3d_reference --limit 0
+```
+
+## Lenia kernel visualizations
+
+Kernel visualization JPGs are written under `assets/visualizations/lenia3d_reference/` and are intended to be committed as lightweight reference assets. Lenia3D animal-specific plots live in `assets/visualizations/lenia3d_reference/animals/`; reusable `kn`/`gn` 1D function templates live in `assets/visualizations/lenia3d_reference/function_profiles/`. Animal plots generate radial profile and centered kernel slice by default; add `--write-origin-slice` when the FFT-origin `z=0` slice is useful for debugging.
+
+Generate plots for one animal:
+
+```powershell
+uv run python scripts\plot_lenia_kernel_profiles.py --manifest configs\lenia3d_reference\animals.json --animal-index 0 --size 128
+```
+
+Generate the first 12 animals plus all function templates:
+
+```powershell
+uv run python scripts\plot_lenia_kernel_profiles.py --manifest configs\lenia3d_reference\animals.json --limit 12 --write-function-profiles
 ```
 
 ## References

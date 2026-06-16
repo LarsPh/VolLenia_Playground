@@ -41,9 +41,8 @@ __device__ float clamp01(float value)
     return fminf(fmaxf(value, 0.0f), 1.0f);
 }
 
-__global__ void multiplySpectrumKernel(
-    cufftComplex* output,
-    const cufftComplex* input,
+__global__ void multiplySpectrumInPlaceKernel(
+    cufftComplex* spectrum,
     const cufftComplex* kernel,
     std::size_t count)
 {
@@ -52,12 +51,12 @@ __global__ void multiplySpectrumKernel(
         return;
     }
 
-    const cufftComplex a = input[index];
+    const cufftComplex a = spectrum[index];
     const cufftComplex b = kernel[index];
     cufftComplex value;
     value.x = a.x * b.x - a.y * b.y;
     value.y = a.x * b.y + a.y * b.x;
-    output[index] = value;
+    spectrum[index] = value;
 }
 
 __global__ void updateStateKernel(
@@ -69,15 +68,14 @@ __global__ void updateStateKernel(
     float mu,
     float sigma,
     float T,
-    GrowthFunctionType growth_function,
-    bool validate_nan_inf)
+    GrowthFunctionType growth_function)
 {
     const std::size_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= count) {
         return;
     }
 
-    const float u = potential[index] * inv_n;
+    const float u = potential[index] * inv_n; // inverse FFT normalization
     const float sigma_safe = fmaxf(sigma, 1.0e-5f);
     const float diff = u - mu;
     float growth = 0.0f;
@@ -91,7 +89,7 @@ __global__ void updateStateKernel(
         growth = 2.0f * value2 * value2 - 1.0f;
     }
     float next = state[index] + growth / fmaxf(T, 1.0f);
-    if (validate_nan_inf && !isfinite(next)) {
+    if (!isfinite(next)) {
         atomicExch(invalid_flag, 1);
         next = 0.0f;
     }
@@ -283,7 +281,7 @@ void LeniaSimulation::rebuildKernel()
     VOL_CUDA_CHECK(cudaGetLastError());
 }
 
-void LeniaSimulation::simulateSteps(int steps, bool validate_nan_inf)
+void LeniaSimulation::simulateSteps(int steps)
 {
     if (steps <= 0) {
         return;
@@ -301,13 +299,12 @@ void LeniaSimulation::simulateSteps(int steps, bool validate_nan_inf)
     const int voxel_grid = static_cast<int>((voxel_count + static_cast<std::size_t>(block) - 1U) / static_cast<std::size_t>(block));
     const float inv_n = 1.0f / static_cast<float>(voxel_count);
 
-    bool invalid_seen = false;
+    VOL_CUDA_CHECK(cudaMemset(invalid_flag_, 0, sizeof(int)));
     for (int step = 0; step < steps; ++step) {
-        VOL_CUDA_CHECK(cudaMemset(invalid_flag_, 0, sizeof(int)));
         VOL_CUFFT_CHECK(cufftExecR2C(r2c_plan_, state_.data(), state_spectrum_));
-        multiplySpectrumKernel<<<spectrum_grid, block>>>(potential_spectrum_, state_spectrum_, kernel_spectrum_, spectrum_count_);
+        multiplySpectrumInPlaceKernel<<<spectrum_grid, block>>>(state_spectrum_, kernel_spectrum_, spectrum_count_);
         VOL_CUDA_CHECK(cudaGetLastError());
-        VOL_CUFFT_CHECK(cufftExecC2R(c2r_plan_, potential_spectrum_, potential_.data()));
+        VOL_CUFFT_CHECK(cufftExecC2R(c2r_plan_, state_spectrum_, potential_.data()));
         updateStateKernel<<<voxel_grid, block>>>(
             state_.data(),
             potential_.data(),
@@ -317,18 +314,15 @@ void LeniaSimulation::simulateSteps(int steps, bool validate_nan_inf)
             params_.mu,
             params_.sigma,
             params_.T,
-            params_.growth_function,
-            validate_nan_inf);
+            params_.growth_function);
         VOL_CUDA_CHECK(cudaGetLastError());
 
-        if (validate_nan_inf) {
-            int invalid = 0;
-            VOL_CUDA_CHECK(cudaMemcpy(&invalid, invalid_flag_, sizeof(int), cudaMemcpyDefault));
-            invalid_seen = invalid_seen || invalid != 0;
-        }
         ++status_.generation;
     }
 
+    int invalid = 0;
+    VOL_CUDA_CHECK(cudaMemcpy(&invalid, invalid_flag_, sizeof(int), cudaMemcpyDefault));
+    const bool invalid_seen = invalid != 0;
     status_.last_step_had_invalid_values = invalid_seen;
     status_.simulation_status = invalid_seen ? "Running; invalid values clamped" : "Running";
     status_.last_error = invalid_seen ? "One or more NaN/Inf values were clamped during update." : "";
@@ -357,7 +351,6 @@ void LeniaSimulation::ensureBuffers(VolumeDesc desc)
 
     VOL_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&state_spectrum_), spectrum_count_ * sizeof(cufftComplex)));
     VOL_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&kernel_spectrum_), spectrum_count_ * sizeof(cufftComplex)));
-    VOL_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&potential_spectrum_), spectrum_count_ * sizeof(cufftComplex)));
     VOL_CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&invalid_flag_), sizeof(int)));
     VOL_CUFFT_CHECK(cufftPlan3d(&r2c_plan_, desc_.nz, desc_.ny, desc_.nx, CUFFT_R2C));
     VOL_CUFFT_CHECK(cufftPlan3d(&c2r_plan_, desc_.nz, desc_.ny, desc_.nx, CUFFT_C2R));
@@ -380,10 +373,6 @@ void LeniaSimulation::destroy()
     if (kernel_spectrum_ != nullptr) {
         VOL_CUDA_CHECK(cudaFree(kernel_spectrum_));
         kernel_spectrum_ = nullptr;
-    }
-    if (potential_spectrum_ != nullptr) {
-        VOL_CUDA_CHECK(cudaFree(potential_spectrum_));
-        potential_spectrum_ = nullptr;
     }
     if (invalid_flag_ != nullptr) {
         VOL_CUDA_CHECK(cudaFree(invalid_flag_));

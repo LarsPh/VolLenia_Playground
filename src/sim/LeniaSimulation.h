@@ -20,7 +20,7 @@ public:
     void resetImportedCells(DeviceVolumeView source_cells);
     void setParams(const LeniaParams& params);
     void rebuildKernel();
-    void simulateSteps(int steps, bool validate_nan_inf);
+    void simulateSteps(int steps);
     void destroy();
 
     [[nodiscard]] DeviceVolumeView currentStateView() const { return state_.view(); }
@@ -40,7 +40,6 @@ private:
     DeviceVolume spatial_kernel_;
     cufftComplex* state_spectrum_ = nullptr;
     cufftComplex* kernel_spectrum_ = nullptr;
-    cufftComplex* potential_spectrum_ = nullptr;
     int* invalid_flag_ = nullptr;
     cufftHandle r2c_plan_ = 0;
     cufftHandle c2r_plan_ = 0;

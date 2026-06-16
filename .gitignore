@@ -46,6 +46,7 @@ imgui.ini
 assets/cells/lenia3d_reference/*.f32
 
 # python
+.venv/
 __pycache__/
 *.py[cod]
 *$py.class
