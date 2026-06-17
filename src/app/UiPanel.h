@@ -20,6 +20,8 @@ struct UiPanelResult {
     bool lenia_apply_cells_only = false;
     bool lenia_apply_scaled_cells_only = false;
     bool lenia_apply_params_only = false;
+    bool lenia_reload_catalog = false;
+    bool lenia_open_catalog_dialog = false;
 };
 
 class UiPanel {
@@ -32,6 +34,7 @@ public:
         const LeniaStatus& lenia_status,
         VolumeSource& volume_source,
         const LeniaAnimalCatalog& animal_catalog,
+        const std::string& animal_catalog_error,
         bool& render_enabled,
         VolumePreset& volume_preset,
         int& volume_resolution,

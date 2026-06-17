@@ -200,6 +200,7 @@ UiPanelResult UiPanel::render(
     const LeniaStatus& lenia_status,
     VolumeSource& volume_source,
     const LeniaAnimalCatalog& animal_catalog,
+    const std::string& animal_catalog_error,
     bool& render_enabled,
     VolumePreset& volume_preset,
     int& volume_resolution,
@@ -440,12 +441,27 @@ UiPanelResult UiPanel::render(
     ImGui::SetNextWindowPos(ImVec2(work_pos.x + work_size.x - catalog_size.x - margin, work_pos.y + work_size.y - catalog_size.y - margin), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(catalog_size, ImGuiCond_FirstUseEver);
     ImGui::Begin("Animal Catalog");
+    if (ImGui::Button("Open catalog...")) {
+        result.lenia_open_catalog_dialog = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reload current")) {
+        result.lenia_reload_catalog = true;
+    }
+    if (!animal_catalog_error.empty()) {
+        ImGui::TextWrapped("Catalog error: %s", animal_catalog_error.c_str());
+    }
+    ImGui::Separator();
     if (!animal_catalog.isLoaded()) {
         ImGui::TextUnformatted("Catalog unavailable");
+        ImGui::TextWrapped("Path: %s", lenia_config.animal_catalog_path.c_str());
         ImGui::TextWrapped("%s", animal_catalog.lastError().c_str());
     } else if (animal_catalog.count() <= 0) {
         ImGui::TextUnformatted("Catalog is empty");
+        ImGui::TextWrapped("Path: %s", lenia_config.animal_catalog_path.c_str());
     } else {
+        ImGui::TextWrapped("Path: %s", animal_catalog.manifestPath().string().c_str());
+        ImGui::Separator();
         lenia_config.selected_animal_index = std::clamp(lenia_config.selected_animal_index, 0, animal_catalog.count() - 1);
         const LeniaAnimalPreset& selected = animal_catalog.animal(lenia_config.selected_animal_index);
         if (ImGui::BeginCombo("Animal preset", selected.display_name.c_str())) {

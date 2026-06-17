@@ -6,4 +6,19 @@ requires-python = ">=3.11"
 dependencies = [
     "matplotlib==3.10.3",
     "numpy==2.3.0",
+    "pytest>=8.4,<9",
+    "torch>=2.7,<3",
+    "triton-windows>=3.6,<3.7; sys_platform == 'win32'",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.pytest.ini_options]
+pythonpath = ["python"]
+testpaths = ["python/tests"]

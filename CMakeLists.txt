@@ -61,6 +61,8 @@ set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+set(NFD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(NFD_INSTALL OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
     glfw
@@ -87,7 +89,13 @@ FetchContent_Declare(
     GIT_TAG v3.11.3
 )
 
-FetchContent_MakeAvailable(glfw imgui glad nlohmann_json)
+FetchContent_Declare(
+    nativefiledialog_extended
+    GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
+    GIT_TAG v1.3.0
+)
+
+FetchContent_MakeAvailable(glfw imgui glad nlohmann_json nativefiledialog_extended)
 
 glad_add_library(glad_gl_core_33 STATIC REPRODUCIBLE API gl:core=3.3)
 
@@ -156,6 +164,7 @@ target_link_libraries(VolLenia_Playground PRIVATE
     glfw
     glad_gl_core_33
     imgui_backend
+    nfd
     nlohmann_json::nlohmann_json
 )
 

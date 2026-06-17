@@ -18,6 +18,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <nlohmann/json.hpp>
+#include <nfd.h>
 
 #include <cuda_runtime.h>
 
@@ -201,6 +202,36 @@ void configureImGuiFonts(ImGuiIO& io)
     io.Fonts->AddFontDefault();
 }
 
+std::string pathToUtf8String(const std::filesystem::path& path)
+{
+    const std::u8string text = path.u8string();
+    return std::string(reinterpret_cast<const char*>(text.data()), text.size());
+}
+
+std::filesystem::path utf8StringToPath(const char* text)
+{
+    if (text == nullptr) {
+        return {};
+    }
+    const std::string bytes(text);
+    return std::filesystem::path(std::u8string(
+        reinterpret_cast<const char8_t*>(bytes.data()),
+        reinterpret_cast<const char8_t*>(bytes.data() + bytes.size())));
+}
+
+std::filesystem::path catalogDialogDefaultPath(const std::filesystem::path& current_path)
+{
+    const std::filesystem::path diff_bridge_path("outputs/diff_bridge");
+    if (std::filesystem::exists(diff_bridge_path)) {
+        return diff_bridge_path;
+    }
+    const std::filesystem::path parent_path = current_path.parent_path();
+    if (!parent_path.empty() && std::filesystem::exists(parent_path)) {
+        return parent_path;
+    }
+    return std::filesystem::current_path();
+}
+
 } // namespace
 
 App::App() = default;
@@ -228,7 +259,7 @@ void App::initialize()
     volume_preset_ = config_.preset;
     volume_resolution_ = config_.volume.nx;
     cuda_info_ = queryCudaDeviceInfo();
-    animal_catalog_.load("configs/lenia3d_reference/animals.json");
+    animal_catalog_.load(lenia_config_.animal_catalog_path);
 
     glfwSetErrorCallback(glfwErrorCallback);
     if (glfwInit() != GLFW_TRUE) {
@@ -265,6 +296,13 @@ void App::initialize()
     int framebuffer_height = 0;
     glfwGetFramebufferSize(window_, &framebuffer_width, &framebuffer_height);
     VOL_GL_CHECK(glViewport(0, 0, framebuffer_width, framebuffer_height));
+
+    if (NFD_Init() == NFD_OKAY) {
+        nfd_initialized_ = true;
+    } else {
+        const char* error = NFD_GetError();
+        animal_catalog_error_ = std::string("Native file picker init failed: ") + (error != nullptr ? error : "unknown error");
+    }
 
     pbo_ = std::make_unique<CudaPbo>();
     display_ = std::make_unique<GlDisplay>();
@@ -319,6 +357,7 @@ void App::mainLoop()
             lenia_status_,
             volume_source_,
             animal_catalog_,
+            animal_catalog_error_,
             render_enabled_,
             volume_preset_,
             volume_resolution_,
@@ -361,6 +400,12 @@ void App::mainLoop()
         }
         if (ui_result.lenia_single_step) {
             lenia_single_step_requested_ = true;
+        }
+        if (ui_result.lenia_reload_catalog) {
+            loadAnimalCatalogRuntime(lenia_config_.animal_catalog_path);
+        }
+        if (ui_result.lenia_open_catalog_dialog) {
+            openAnimalCatalogDialog();
         }
         if (ui_result.lenia_load_animal) {
             loadAnimalCells(lenia_config_.selected_animal_index, false);
@@ -426,6 +471,11 @@ void App::shutdown() noexcept
     if (window_ != nullptr) {
         glfwDestroyWindow(window_);
         window_ = nullptr;
+    }
+
+    if (nfd_initialized_) {
+        NFD_Quit();
+        nfd_initialized_ = false;
     }
 
     if (glfw_initialized_) {
@@ -604,6 +654,57 @@ void App::renderLeniaVolumeFrame()
     lenia_status_.playing = lenia_config_.playing;
 }
 
+void App::openAnimalCatalogDialog()
+{
+    if (!nfd_initialized_) {
+        animal_catalog_error_ = "Native file picker is not initialized.";
+        return;
+    }
+
+    nfdu8char_t* out_path = nullptr;
+    const nfdu8filteritem_t filters[] = {
+        {"JSON catalog", "json"},
+    };
+    const std::filesystem::path default_path = catalogDialogDefaultPath(lenia_config_.animal_catalog_path);
+    const std::string default_path_text = pathToUtf8String(default_path);
+    nfdopendialogu8args_t args {};
+    args.filterList = filters;
+    args.filterCount = 1;
+    args.defaultPath = default_path_text.c_str();
+
+    const nfdresult_t result = NFD_OpenDialogU8_With(&out_path, &args);
+    if (result == NFD_OKAY) {
+        loadAnimalCatalogRuntime(utf8StringToPath(out_path));
+        NFD_FreePathU8(out_path);
+        return;
+    }
+    if (result == NFD_CANCEL) {
+        return;
+    }
+
+    const char* error = NFD_GetError();
+    animal_catalog_error_ = std::string("Native file picker failed: ") + (error != nullptr ? error : "unknown error");
+}
+
+bool App::loadAnimalCatalogRuntime(const std::filesystem::path& manifest_path)
+{
+    LeniaAnimalCatalog next_catalog;
+    next_catalog.load(manifest_path);
+    if (!next_catalog.isLoaded() || next_catalog.count() <= 0) {
+        animal_catalog_error_ = next_catalog.lastError();
+        if (animal_catalog_error_.empty()) {
+            animal_catalog_error_ = "Catalog has no compatible animal entries: " + manifest_path.string();
+        }
+        return false;
+    }
+
+    animal_catalog_ = std::move(next_catalog);
+    lenia_config_.animal_catalog_path = animal_catalog_.manifestPath().string();
+    lenia_config_.selected_animal_index = 0;
+    animal_catalog_error_.clear();
+    return true;
+}
+
 void App::loadAnimalCells(int animal_index, bool scaled)
 {
     if (animal_catalog_.count() <= 0) {
@@ -761,6 +862,7 @@ void App::loadLeniaConfig(const std::string& path)
     lenia_config_.seed = jsonValueOr(lenia, "seed", lenia_config_.seed);
     lenia_config_.imported_cell_scale = std::clamp(jsonValueOr(lenia, "imported_cell_scale", lenia_config_.imported_cell_scale), 1.0f, 8.0f);
     lenia_config_.auto_scale_imported_R = jsonValueOr(lenia, "auto_scale_imported_R", lenia_config_.auto_scale_imported_R);
+    lenia_config_.animal_catalog_path = jsonValueOr(lenia, "animal_catalog", lenia_config_.animal_catalog_path);
     lenia_config_.cell_resample_mode = cellResampleModeFromString(
         jsonValueOr(lenia, "cell_resample_mode", std::string("trilinear")),
         lenia_config_.cell_resample_mode);

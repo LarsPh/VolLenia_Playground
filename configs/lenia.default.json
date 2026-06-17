@@ -4,6 +4,7 @@
     "playing": true,
     "steps_per_frame": 1,
     "resolution": 128,
+    "animal_catalog": "configs/lenia3d_reference/animals.json",
     "seed": 1,
     "imported_cell_scale": 4.0,
     "auto_scale_imported_R": true,

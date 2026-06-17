@@ -117,8 +117,10 @@ uv run python scripts\plot_lenia_kernel_profiles.py --manifest configs\lenia3d_r
 
 ## References
 
-Local PDFs are kept under `references/` for offline reading:
+See `docs/research_search_references.md` for more references.
+Local PDFs are kept under `references/` for offline reading.
 
 - Bert Wang-Chak Chan, **Lenia - Biology of Artificial Life**: [arXiv:1812.05433](https://arxiv.org/abs/1812.05433) (`references/lenia.pdf`)
 - Bert Wang-Chak Chan, **Lenia and Expanded Universe**: [arXiv:2005.03742](https://arxiv.org/abs/2005.03742) (`references/lenia_expanded.pdf`)
 - Stephan Rafler, **Generalization of Conway's "Game of Life" to a continuous domain - SmoothLife**: [arXiv:1111.1567](https://arxiv.org/abs/1111.1567) (`references/smoothlife.pdf`)
+- David A. Naranjo, **Discovering Sensorimotor Agency in Cellular Automata using Diversity Search**: [arXiv:2402.10236](https://arxiv.org/abs/2402.10236) (`references/sensorimotor-lenia.pdf`)

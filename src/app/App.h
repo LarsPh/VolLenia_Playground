@@ -7,6 +7,7 @@
 #include "sim/LeniaParams.h"
 
 #include <cstddef>
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -59,6 +60,7 @@ struct LeniaConfig {
     int params_source_animal_index = -1;
     unsigned int seed = 1;
     float imported_cell_scale = 4.0f;
+    std::string animal_catalog_path = "configs/lenia3d_reference/animals.json";
     LeniaSeedPreset seed_preset = LeniaSeedPreset::ReferenceRandomBox;
     LeniaParamPreset param_preset = LeniaParamPreset::DiguttomeSaliens;
     CellResampleMode cell_resample_mode = CellResampleMode::Trilinear;
@@ -100,6 +102,8 @@ private:
     void renderSyntheticVolumeFrame();
     void renderLeniaVolumeFrame();
     void drawUploadedVolume(DeviceVolumeView volume, const char* status_text);
+    void openAnimalCatalogDialog();
+    bool loadAnimalCatalogRuntime(const std::filesystem::path& manifest_path);
     void loadAnimalCells(int animal_index, bool scaled);
     void applyAnimalParams(int animal_index, bool scale_radius);
 
@@ -122,6 +126,7 @@ private:
     const char* gl_version_text_ = "Unavailable";
     RenderParams render_params_;
     VolumeRenderStatus volume_status_;
+    std::string animal_catalog_error_;
     LeniaConfig lenia_config_;
     LeniaStatus lenia_status_;
     VolumeSource volume_source_ = VolumeSource::Lenia;
@@ -141,6 +146,7 @@ private:
     float animation_time_seconds_ = 0.0f;
     bool imgui_initialized_ = false;
     bool glfw_initialized_ = false;
+    bool nfd_initialized_ = false;
 };
 
 } // namespace vollenia

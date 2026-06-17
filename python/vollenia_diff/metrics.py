@@ -1,0 +1,149 @@
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Any
+
+import torch
+
+
+def _cache_key(shape: tuple[int, ...], device: torch.device, dtype: torch.dtype) -> tuple[object, ...]:
+    return tuple(shape), str(device), str(dtype)
+
+
+@lru_cache(maxsize=64)
+def _coords_cached(shape: tuple[int, ...], device_text: str, dtype_text: str) -> torch.Tensor:
+    device = torch.device(device_text)
+    dtype = getattr(torch, dtype_text.split(".")[-1])
+    axes = [torch.arange(size, device=device, dtype=dtype) for size in shape]
+    grids = torch.meshgrid(*axes, indexing="ij")
+    return torch.stack(grids, dim=0)
+
+
+@lru_cache(maxsize=64)
+def _border_mask_cached(shape: tuple[int, ...], width: int, device_text: str) -> torch.Tensor:
+    device = torch.device(device_text)
+    mask = torch.zeros(shape, device=device, dtype=torch.bool)
+    for axis, size in enumerate(shape):
+        index = torch.arange(size, device=device)
+        axis_mask = (index < width) | (index >= size - width)
+        view_shape = [1 for _ in shape]
+        view_shape[axis] = size
+        mask = mask | axis_mask.reshape(view_shape)
+    return mask
+
+
+def coordinate_grid(state: torch.Tensor) -> torch.Tensor:
+    key = _cache_key(tuple(int(v) for v in state.shape), state.device, state.dtype)
+    return _coords_cached(key[0], key[1], key[2])
+
+
+def mass(state: torch.Tensor) -> torch.Tensor:
+    return state.sum()
+
+
+def mean_density(state: torch.Tensor) -> torch.Tensor:
+    return state.mean()
+
+
+def max_density(state: torch.Tensor) -> torch.Tensor:
+    return state.max()
+
+
+def center_of_mass(state: torch.Tensor, coords: torch.Tensor | None = None, eps: float = 1.0e-8) -> torch.Tensor:
+    coords = coordinate_grid(state) if coords is None else coords
+    m = mass(state)
+    flat_state = state.reshape(-1)
+    flat_coords = coords.reshape(coords.shape[0], -1)
+    return (flat_coords * flat_state.unsqueeze(0)).sum(dim=1) / (m + eps)
+
+
+def second_moment(
+    state: torch.Tensor,
+    coords: torch.Tensor | None = None,
+    com: torch.Tensor | None = None,
+    eps: float = 1.0e-8,
+) -> torch.Tensor:
+    coords = coordinate_grid(state) if coords is None else coords
+    com = center_of_mass(state, coords, eps=eps) if com is None else com
+    centered = coords - com.reshape((-1,) + (1,) * state.ndim)
+    radius2 = (centered * centered).sum(dim=0)
+    return (state * radius2).sum() / (mass(state) + eps)
+
+
+def covariance(
+    state: torch.Tensor,
+    coords: torch.Tensor | None = None,
+    com: torch.Tensor | None = None,
+    eps: float = 1.0e-8,
+) -> torch.Tensor:
+    coords = coordinate_grid(state) if coords is None else coords
+    com = center_of_mass(state, coords, eps=eps) if com is None else com
+    flat_state = state.reshape(-1)
+    flat_coords = coords.reshape(coords.shape[0], -1)
+    centered = flat_coords - com.reshape(-1, 1)
+    return (centered * flat_state.reshape(1, -1)) @ centered.transpose(0, 1) / (mass(state) + eps)
+
+
+def covariance_eigvals(state: torch.Tensor, eps: float = 1.0e-8) -> torch.Tensor:
+    cov = covariance(state, eps=eps)
+    return torch.linalg.eigvalsh(cov)
+
+
+def anisotropy(state: torch.Tensor, eps: float = 1.0e-8) -> torch.Tensor:
+    eigvals = covariance_eigvals(state, eps=eps)
+    return eigvals[-1] / (eigvals[0] + eps)
+
+
+def target_distance(state: torch.Tensor, target: torch.Tensor, eps: float = 1.0e-8) -> torch.Tensor:
+    target = target.to(device=state.device, dtype=state.dtype)
+    return torch.linalg.vector_norm(center_of_mass(state, eps=eps) - target)
+
+
+def obstacle_overlap(state: torch.Tensor, obstacle: torch.Tensor, eps: float = 1.0e-8) -> torch.Tensor:
+    obstacle = obstacle.to(device=state.device, dtype=state.dtype)
+    return (state * obstacle).sum() / (mass(state) + eps)
+
+
+def border_mass(state: torch.Tensor, width: int = 2, eps: float = 1.0e-8) -> torch.Tensor:
+    shape = tuple(int(v) for v in state.shape)
+    mask = _border_mask_cached(shape, int(width), str(state.device)).to(dtype=state.dtype)
+    return (state * mask).sum() / (mass(state) + eps)
+
+
+def active_voxels(state: torch.Tensor, threshold: float = 0.05) -> torch.Tensor:
+    return (state > threshold).sum()
+
+
+def state_summary(state: torch.Tensor, target: torch.Tensor | None = None) -> dict[str, Any]:
+    with torch.no_grad():
+        coords = coordinate_grid(state)
+        com = center_of_mass(state, coords)
+        cov = covariance(state, coords, com)
+        eigvals = torch.linalg.eigvalsh(cov)
+        summary: dict[str, Any] = {
+            "mass": float(mass(state).detach().cpu()),
+            "mean_density": float(mean_density(state).detach().cpu()),
+            "max_density": float(max_density(state).detach().cpu()),
+            "active_voxels": int(active_voxels(state).detach().cpu()),
+            "center_of_mass": [float(v) for v in com.detach().cpu().tolist()],
+            "second_moment": float(second_moment(state, coords, com).detach().cpu()),
+            "covariance_eigvals": [float(v) for v in eigvals.detach().cpu().tolist()],
+            "anisotropy": float((eigvals[-1] / (eigvals[0] + 1.0e-8)).detach().cpu()),
+            "border_mass": float(border_mass(state).detach().cpu()),
+        }
+        if target is not None:
+            summary["target_distance"] = float(target_distance(state, target).detach().cpu())
+        return summary
+
+
+def rollout_summary(states: list[torch.Tensor], target: torch.Tensor | None = None) -> dict[str, Any]:
+    if not states:
+        return {"states": []}
+    summaries = [state_summary(state, target) for state in states]
+    masses = torch.tensor([item["mass"] for item in summaries], dtype=torch.float64)
+    return {
+        "states": summaries,
+        "mass_mean": float(masses.mean()),
+        "mass_std": float(masses.std(unbiased=False)),
+        "mass_cv": float(masses.std(unbiased=False) / (masses.mean() + 1.0e-8)),
+    }
