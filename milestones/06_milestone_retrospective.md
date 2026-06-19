@@ -29,6 +29,7 @@ cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Aux
 
 GUI smoke
 => VolLenia_Playground.exe 保持运行 5 秒，没有提前退出
+
 ```
 
 需要明确的是：Plan 06 的 toy optimization 目前只是 gradient / bridge sanity，不代表已经找到了稳定可见的 3D organism。早期 `toy_compile` 输出 final state 变黑是合理暴露出的实验质量问题，而不是 renderer bridge 本身失败。当时 raw metrics 里能看到：
@@ -119,6 +120,15 @@ torch._C._fft.fft_irfftn
 ```
 
 这不是普通 Python 代码写法问题，而是当前 FFT complex op 在 Inductor 里的支持/优化提示。
+
+实际测速输出，RTX 4060 Ti，32^3，64 steps，5 repeats：
+
+```text
+eager mean:    0.4123 ms / step
+compiled mean: 0.2914 ms / step
+first compile+step wall time: 1580.37 ms
+compiled vs eager max abs diff: 0.0
+```
 
 ### 3.3 C++ bridge 和 GUI file picker
 
