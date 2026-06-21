@@ -104,6 +104,7 @@ private:
     void drawUploadedVolume(DeviceVolumeView volume, const char* status_text);
     void openAnimalCatalogDialog();
     bool loadAnimalCatalogRuntime(const std::filesystem::path& manifest_path);
+    void loadAnimalNative(int animal_index);
     void loadAnimalCells(int animal_index, bool scaled);
     void applyAnimalParams(int animal_index, bool scale_radius);
 

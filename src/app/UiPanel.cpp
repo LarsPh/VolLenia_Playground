@@ -485,6 +485,12 @@ UiPanelResult UiPanel::render(
             ImGui::TextWrapped("CName: %s", animal.cname.c_str());
         }
         ImGui::Text("Cells dims: %d x %d x %d", animal.cells_desc.nx, animal.cells_desc.ny, animal.cells_desc.nz);
+        ImGui::Text(
+            "Simulation dims: %d x %d x %d",
+            animal.simulation_desc.nx,
+            animal.simulation_desc.ny,
+            animal.simulation_desc.nz);
+        ImGui::Text("Resolution policy: %s", animal.resolution_policy.c_str());
         ImGui::Text("R %.2f  T %.2f  m %.4f  s %.4f", animal.params.radius, animal.params.T, animal.params.mu, animal.params.sigma);
         ImGui::Text("Kernel: %s", kernelCoreTypeName(animal.params.kernel_core));
         ImGui::Text("Growth: %s", growthFunctionTypeName(animal.params.growth_function));
@@ -504,7 +510,7 @@ UiPanelResult UiPanel::render(
             std::max(1, static_cast<int>(animal.cells_desc.nx * lenia_config.imported_cell_scale + 0.5f)),
             std::max(1, static_cast<int>(animal.cells_desc.ny * lenia_config.imported_cell_scale + 0.5f)),
             std::max(1, static_cast<int>(animal.cells_desc.nz * lenia_config.imported_cell_scale + 0.5f)));
-        if (ImGui::Button("Load initial state + rule")) {
+        if (ImGui::Button("Load native state + native rule")) {
             result.lenia_load_animal = true;
         }
         if (ImGui::Button("Load scaled state + scaled rule")) {

@@ -7,6 +7,8 @@ dependencies = [
     "matplotlib==3.10.3",
     "numpy==2.3.0",
     "pytest>=8.4,<9",
+    "PyYAML>=6,<7",
+    "rich>=13,<15",
     "torch>=2.7,<3",
     "triton-windows>=3.6,<3.7; sys_platform == 'win32'",
 ]

@@ -1,0 +1,109 @@
+profile: move_shape_target
+
+source:
+  source_size: 64
+  rule_randomization:
+    enabled: true
+    probability: 1.0
+    ring_count_probability: 0.8
+    ring_count_choices: [2, 3, 4, 5, 6]
+    kn_probability: 0.5
+    kn_choices: [1, 2, 3, 4]
+    gn_probability: 0.0
+    gn_choices: [1]
+    R_probability: 1.0
+    R_log_std: 0.08
+    m_probability: 1.0
+    m_std: 0.02
+    s_probability: 1.0
+    s_log_std: 0.20
+    b_probability: 1.0
+    b_element_probability: 1.0
+    b_std: 0.06
+    T_probability: 0.4
+    T_log_std: 0.10
+
+simulation:
+  size: 128
+  steps: 50
+
+search:
+  iterations: 160
+  random_init_count: 12
+  source_selection: best
+  mutation_std: null
+  mutation:
+    probability: 0.75
+    no_mutation_every_iterations: 5
+    mutated_inner_optim_steps: 25
+    initial_logit_probability: 0.70
+    initial_logit_std: 0.02
+    rule:
+      enabled: true
+      probability: 0.60
+      R_probability: 0.25
+      R_log_std: 0.05
+      m_probability: 0.70
+      m_std: 0.01
+      s_probability: 0.70
+      s_log_std: 0.10
+      b_probability: 0.50
+      b_element_probability: 0.50
+      b_std: 0.03
+      T_probability: 0.0
+      T_log_std: 0.0
+  seed: 0
+  debug_allow_size_32: false
+
+optimization:
+  inner_optim_steps: 125
+  train_clip_mode: straight_through_hard
+  eval_clip_mode: hard
+  optimize_params: [m, s]
+  compile_step: true
+  optimizer:
+    name: Adam
+    lr: 0.08
+    initial_lr: null
+    param_lr: null
+    max_grad_norm: null
+
+objective:
+  gate_fail_score_cap: 5.0
+  eval_gates:
+    min_max_density: 0.08
+    mass_fraction: [0.0001, 0.06]
+    active_fraction: [0.0005, 0.12]
+    body_radius_norm: [0.02, 0.28]
+    max_border_mass: 0.12
+  target_offset_norm_zyx: [0.0, 0.0, 0.12]
+  target_radius_norm: 0.08
+  target_density: 0.8
+  target_falloff_floor: 0.25
+  anisotropy_max: 8.0
+  min_active_fraction_soft: 0.01
+  min_max_density: 0.08
+  weights:
+    com: 8.0
+    balanced_target: 4.0
+    target_mask: 0.0
+    absolute_occupancy: 35.0
+    mass_ratio: 8.0
+    active_ratio: 6.0
+    compactness_ratio: 5.0
+    anisotropy: 0.2
+    border: 6.0
+    visibility: 20.0
+  windows:
+    mass_ratio: [0.35, 1.6]
+    active_ratio: [0.25, 1.5]
+    compactness_ratio: [0.25, 1.8]
+    mass_fraction: [0.0001, 0.06]
+    active_fraction: [0.0005, 0.12]
+
+export:
+  out: outputs/search_mvp/move_sthard_128_test
+  export_top_k: 3
+  save_initial_states: true
+  checkpoint_every_iterations: 5
+  best_every_iterations: 1

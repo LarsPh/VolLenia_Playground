@@ -44,10 +44,13 @@ def dims_nx_ny_nz(state: torch.Tensor) -> list[int]:
 def write_catalog(
     states: dict[str, torch.Tensor],
     out_dir: Path,
-    params: LeniaParams,
+    params: LeniaParams | dict[str, LeniaParams],
     *,
     source: str = "pytorch_diff_backend",
     metrics: dict[str, Any] | None = None,
+    simulation_dims: list[int] | dict[str, list[int]] | None = None,
+    resolution_policy: str | dict[str, str] = "native",
+    animal_metadata: dict[str, dict[str, Any]] | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     cells_dir = out_dir / "cells"
@@ -56,18 +59,25 @@ def write_catalog(
         safe_slug = slug.replace("\\", "_").replace("/", "_")
         cells_path = cells_dir / f"{safe_slug}.f32"
         tensor_to_f32_file(state, cells_path)
-        animals.append(
-            {
-                "id": animal_id,
-                "source_index": animal_id,
-                "slug": safe_slug,
-                "code": f"torch-{animal_id}",
-                "name": f"PyTorch {safe_slug}",
-                "dims": dims_nx_ny_nz(state),
-                "cells_file": f"cells/{safe_slug}.f32",
-                "params": params.to_catalog_dict(),
-            }
-        )
+        dims = dims_nx_ny_nz(state)
+        params_for_slug = params[slug] if isinstance(params, dict) else params
+        sim_dims = simulation_dims[slug] if isinstance(simulation_dims, dict) else simulation_dims
+        policy = resolution_policy[slug] if isinstance(resolution_policy, dict) else resolution_policy
+        animal = {
+            "id": animal_id,
+            "source_index": animal_id,
+            "slug": safe_slug,
+            "code": f"torch-{animal_id}",
+            "name": f"PyTorch {safe_slug}",
+            "dims": dims,
+            "simulation_dims": sim_dims or dims,
+            "resolution_policy": policy,
+            "cells_file": f"cells/{safe_slug}.f32",
+            "params": params_for_slug.to_catalog_dict(),
+        }
+        if animal_metadata is not None:
+            animal.update(animal_metadata.get(slug, animal_metadata.get(safe_slug, {})))
+        animals.append(animal)
 
     manifest = {
         "format_version": 1,
@@ -89,9 +99,20 @@ def write_single_state_catalog(
     *,
     slug: str = "torch_state",
     target: torch.Tensor | None = None,
+    simulation_dims: list[int] | None = None,
+    resolution_policy: str = "native",
+    animal_metadata: dict[str, Any] | None = None,
 ) -> Path:
     summary = state_summary(state, target)
-    return write_catalog({slug: state}, out_dir, params, metrics=summary)
+    return write_catalog(
+        {slug: state},
+        out_dir,
+        params,
+        metrics=summary,
+        simulation_dims=simulation_dims,
+        resolution_policy=resolution_policy,
+        animal_metadata={slug: animal_metadata or {}},
+    )
 
 
 def load_tensor(path: Path) -> torch.Tensor:

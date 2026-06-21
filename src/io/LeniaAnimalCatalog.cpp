@@ -53,6 +53,14 @@ std::string fallbackAnimalName(int id)
     return "Animal #" + std::to_string(id);
 }
 
+VolumeDesc parseVolumeDesc(const nlohmann::json& dims)
+{
+    if (!dims.is_array() || dims.size() != 3) {
+        throw std::runtime_error("Expected dims array [nx, ny, nz]");
+    }
+    return VolumeDesc {dims.at(0).get<int>(), dims.at(1).get<int>(), dims.at(2).get<int>()};
+}
+
 void assignDisplayNames(std::vector<LeniaAnimalPreset>& animals)
 {
     std::map<std::string, int> name_counts;
@@ -149,6 +157,7 @@ void LeniaAnimalCatalog::load(const std::filesystem::path& manifest_path)
             if (!dims.is_array() || dims.size() != 3) {
                 continue;
             }
+            const nlohmann::json simulation_dims = item.value("simulation_dims", dims);
 
             LeniaAnimalPreset animal;
             animal.id = jsonValueOr(item, "id", static_cast<int>(animals_.size()));
@@ -158,7 +167,9 @@ void LeniaAnimalCatalog::load(const std::filesystem::path& manifest_path)
             animal.name = jsonValueOr(item, "name", std::string());
             animal.display_name = animal.name.empty() ? fallbackAnimalName(animal.id) : animal.name;
             animal.cname = jsonValueOr(item, "cname", std::string());
-            animal.cells_desc = VolumeDesc {dims.at(0).get<int>(), dims.at(1).get<int>(), dims.at(2).get<int>()};
+            animal.cells_desc = parseVolumeDesc(dims);
+            animal.simulation_desc = parseVolumeDesc(simulation_dims);
+            animal.resolution_policy = jsonValueOr(item, "resolution_policy", std::string("native"));
             animal.cells_file = (base_dir / jsonValueOr(item, "cells_file", std::string())).lexically_normal();
             animal.params = parseParams(item.value("params", nlohmann::json::object()));
             animals_.push_back(std::move(animal));

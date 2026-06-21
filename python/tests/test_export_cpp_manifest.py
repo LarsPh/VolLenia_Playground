@@ -10,11 +10,22 @@ from vollenia_diff.params import LeniaParams
 
 def test_export_manifest_references_expected_f32(tmp_path) -> None:
     state = torch.arange(4 * 5 * 6, dtype=torch.float32, device="cuda").reshape(4, 5, 6)
-    manifest_path = write_single_state_catalog(state, tmp_path, LeniaParams(), slug="unit_state")
+    manifest_path = write_single_state_catalog(
+        state,
+        tmp_path,
+        LeniaParams(),
+        slug="unit_state",
+        simulation_dims=[8, 8, 8],
+        resolution_policy="cropped",
+        animal_metadata={"goal_profile": "unit"},
+    )
     root = json.loads(manifest_path.read_text(encoding="utf-8"))
     animal = root["animals"][0]
     assert root["layout"] == "x-fastest"
     assert animal["dims"] == [6, 5, 4]
+    assert animal["simulation_dims"] == [8, 8, 8]
+    assert animal["resolution_policy"] == "cropped"
+    assert animal["goal_profile"] == "unit"
     cells_path = tmp_path / animal["cells_file"]
     assert cells_path.exists()
     assert cells_path.stat().st_size == state.numel() * 4

@@ -114,6 +114,75 @@ def active_voxels(state: torch.Tensor, threshold: float = 0.05) -> torch.Tensor:
     return (state > threshold).sum()
 
 
+def density_view(state: torch.Tensor, mode: str = "raw") -> torch.Tensor:
+    if mode == "raw":
+        return state
+    if mode == "clamp":
+        return torch.clamp(state, 0.0, 1.0)
+    if mode == "sigmoid":
+        return torch.sigmoid(state)
+    if mode == "softplus":
+        return torch.nn.functional.softplus(state)
+    raise ValueError(f"Unknown density view mode: {mode}")
+
+
+def normalized_descriptors(
+    state: torch.Tensor,
+    *,
+    initial: torch.Tensor | None = None,
+    target: torch.Tensor | None = None,
+    active_threshold: float = 0.05,
+    eps: float = 1.0e-8,
+) -> dict[str, torch.Tensor]:
+    shape = tuple(int(v) for v in state.shape)
+    volume_voxels = float(state.numel())
+    min_dim = float(min(shape))
+    coords = coordinate_grid(state)
+    state_mass = mass(state)
+    com = center_of_mass(state, coords, eps=eps)
+    moment = second_moment(state, coords, com, eps=eps)
+    eigvals = torch.linalg.eigvalsh(covariance(state, coords, com, eps=eps))
+    active = active_voxels(state, threshold=active_threshold).to(dtype=state.dtype)
+    descriptor: dict[str, torch.Tensor] = {
+        "mass_fraction": state_mass / volume_voxels,
+        "active_fraction": active / volume_voxels,
+        "second_moment_norm": moment / (min_dim * min_dim),
+        "body_radius": torch.sqrt(torch.clamp(moment, min=0.0) + eps),
+        "anisotropy": eigvals[-1] / (eigvals[0] + eps),
+        "border_mass": border_mass(state, eps=eps),
+    }
+    descriptor["body_radius_norm"] = descriptor["body_radius"] / min_dim
+    shape_tensor = torch.tensor(
+        [max(size - 1, 1) for size in shape],
+        device=state.device,
+        dtype=state.dtype,
+    )
+    descriptor["com_norm"] = com / shape_tensor
+    if target is not None:
+        distance = target_distance(state, target, eps=eps)
+        descriptor["target_distance_body"] = distance / (descriptor["body_radius"] + eps)
+        descriptor["target_distance_norm"] = distance / min_dim
+    if initial is not None:
+        initial_mass = mass(initial)
+        initial_active = active_voxels(initial, threshold=active_threshold).to(dtype=state.dtype)
+        initial_moment = second_moment(initial, eps=eps)
+        descriptor["mass_ratio"] = state_mass / (initial_mass + eps)
+        descriptor["active_ratio"] = active / (initial_active + eps)
+        descriptor["compactness_ratio"] = moment / (initial_moment + eps)
+    return descriptor
+
+
+def descriptors_to_json(descriptors: dict[str, torch.Tensor]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in descriptors.items():
+        detached = value.detach().cpu()
+        if detached.ndim == 0:
+            result[key] = float(detached)
+        else:
+            result[key] = [float(v) for v in detached.reshape(-1).tolist()]
+    return result
+
+
 def state_summary(state: torch.Tensor, target: torch.Tensor | None = None) -> dict[str, Any]:
     with torch.no_grad():
         coords = coordinate_grid(state)
@@ -131,6 +200,10 @@ def state_summary(state: torch.Tensor, target: torch.Tensor | None = None) -> di
             "anisotropy": float((eigvals[-1] / (eigvals[0] + 1.0e-8)).detach().cpu()),
             "border_mass": float(border_mass(state).detach().cpu()),
         }
+        descriptors = normalized_descriptors(state, target=target)
+        summary["mass_fraction"] = float(descriptors["mass_fraction"].detach().cpu())
+        summary["active_fraction"] = float(descriptors["active_fraction"].detach().cpu())
+        summary["body_radius_norm"] = float(descriptors["body_radius_norm"].detach().cpu())
         if target is not None:
             summary["target_distance"] = float(target_distance(state, target).detach().cpu())
         return summary

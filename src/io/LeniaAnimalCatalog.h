@@ -17,6 +17,8 @@ struct LeniaAnimalPreset {
     std::string display_name;
     std::string cname;
     VolumeDesc cells_desc;
+    VolumeDesc simulation_desc;
+    std::string resolution_policy = "native";
     std::filesystem::path cells_file;
     LeniaParams params;
 };

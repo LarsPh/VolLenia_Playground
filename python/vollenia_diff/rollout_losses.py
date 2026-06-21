@@ -1,0 +1,276 @@
+from __future__ import annotations
+
+import copy
+from dataclasses import dataclass, field
+from typing import Callable
+
+import torch
+import torch.nn.functional as F
+
+from . import metrics
+from .params import LeniaParams
+from .simulator import LeniaSimulator, _clip_mode_id, lenia_step_tensor
+
+
+@dataclass(slots=True)
+class GoalProfile:
+    name: str
+    weights: dict[str, float] = field(default_factory=dict)
+
+
+MOVE_SHAPE_TARGET_OBJECTIVE: dict[str, object] = {
+    "weights": {
+        "com": 8.0,
+        "balanced_target": 4.0,
+        "target_mask": 0.0,
+        "absolute_occupancy": 35.0,
+        "mass_ratio": 8.0,
+        "active_ratio": 6.0,
+        "compactness_ratio": 5.0,
+        "anisotropy": 0.2,
+        "border": 6.0,
+        "visibility": 20.0,
+    },
+    "windows": {
+        "mass_ratio": [0.35, 1.6],
+        "active_ratio": [0.25, 1.5],
+        "compactness_ratio": [0.25, 1.8],
+        "mass_fraction": [0.0001, 0.06],
+        "active_fraction": [0.0005, 0.12],
+    },
+    "target_radius_norm": 0.08,
+    "target_density": 0.8,
+    "target_falloff_floor": 0.25,
+    "anisotropy_max": 8.0,
+    "min_active_fraction_soft": 0.01,
+    "min_max_density": 0.08,
+}
+
+
+MAINTAIN_ANIMAL_PROFILE_OBJECTIVE: dict[str, object] = {
+    "weights": {
+        "mass_ratio": 25.0,
+        "active_ratio": 10.0,
+        "compactness_ratio": 5.0,
+        "anisotropy": 0.25,
+        "border": 2.0,
+        "visibility": 8.0,
+    },
+    "windows": {
+        "mass_ratio": [0.4, 2.2],
+        "active_ratio": [0.3, 2.5],
+        "compactness_ratio": [0.35, 3.0],
+    },
+    "anisotropy_max": 10.0,
+    "min_active_fraction_soft": 0.01,
+    "min_max_density": 0.08,
+}
+
+
+def _deep_update(base: dict[str, object], updates: dict[str, object] | None) -> dict[str, object]:
+    result = copy.deepcopy(base)
+    for key, value in (updates or {}).items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_update(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _weights(config: dict[str, object], overrides: dict[str, float] | None) -> dict[str, float]:
+    result = {key: float(value) for key, value in dict(config.get("weights", {})).items()}
+    result.update({key: float(value) for key, value in (overrides or {}).items()})
+    return result
+
+
+def _window(config: dict[str, object], name: str) -> tuple[float, float]:
+    values = dict(config.get("windows", {}))[name]
+    low, high = values  # type: ignore[misc]
+    return float(low), float(high)
+
+
+def rollout_collect(
+    simulator: LeniaSimulator,
+    state0: torch.Tensor,
+    steps: int,
+    *,
+    params: LeniaParams | None = None,
+    m: float | torch.Tensor | None = None,
+    s: float | torch.Tensor | None = None,
+    T: float | torch.Tensor | None = None,
+    clip_mode: str | None = None,
+    sample_interval: int = 1,
+) -> list[torch.Tensor]:
+    base_params = (params or simulator.params).sanitized()
+    clip_id = _clip_mode_id(clip_mode or simulator.clip_mode)
+    use_simulator_step = m is None and s is None and T is None and (clip_mode is None or clip_mode == simulator.clip_mode)
+    state = state0.to(device=simulator.device, dtype=simulator.dtype)
+    states = [state]
+    for step_index in range(1, int(steps) + 1):
+        if use_simulator_step:
+            state = simulator.step(state)
+        else:
+            state = lenia_step_tensor(
+                state,
+                simulator.kernel_hat,
+                simulator.shape,
+                base_params.m if m is None else m,
+                base_params.s if s is None else s,
+                base_params.T if T is None else T,
+                base_params.gn,
+                clip_id,
+            )
+        if sample_interval > 0 and step_index % sample_interval == 0:
+            states.append(state)
+    return states
+
+
+def soft_active_fraction(state: torch.Tensor, threshold: float = 0.05, sharpness: float = 40.0) -> torch.Tensor:
+    return torch.sigmoid((state - threshold) * sharpness).mean()
+
+
+def ratio_window_loss(value: torch.Tensor, low: float, high: float) -> torch.Tensor:
+    low_t = torch.as_tensor(low, device=value.device, dtype=value.dtype)
+    high_t = torch.as_tensor(high, device=value.device, dtype=value.dtype)
+    return F.relu(low_t - value) ** 2 + F.relu(value - high_t) ** 2
+
+
+def fraction_window_loss(value: torch.Tensor, low: float, high: float) -> torch.Tensor:
+    return ratio_window_loss(value, low, high)
+
+
+def target_sphere_mask(shape: tuple[int, ...], target: torch.Tensor, radius: float, falloff_floor: float = 0.25) -> torch.Tensor:
+    device = target.device
+    dtype = target.dtype
+    axes = [torch.arange(size, device=device, dtype=dtype) for size in shape]
+    grids = torch.meshgrid(*axes, indexing="ij")
+    coords = torch.stack(grids, dim=0)
+    centered = coords - target.reshape((-1,) + (1,) * len(shape))
+    distance = torch.sqrt((centered * centered).sum(dim=0))
+    core = (distance <= radius).to(dtype)
+    falloff = torch.clamp(1.0 - (distance - radius) / max(radius, 1.0), 0.0, 1.0)
+    return torch.maximum(core, float(falloff_floor) * falloff)
+
+
+def balanced_target_loss(state: torch.Tensor, target_mask: torch.Tensor, target_density: float) -> torch.Tensor:
+    target = target_mask * float(target_density)
+    foreground = target_mask > 0.0
+    if foreground.any():
+        foreground_loss = F.mse_loss(state[foreground], target[foreground])
+    else:
+        foreground_loss = torch.zeros((), device=state.device, dtype=state.dtype)
+    background = ~foreground
+    if background.any():
+        background_loss = (state[background] * state[background]).mean()
+    else:
+        background_loss = torch.zeros((), device=state.device, dtype=state.dtype)
+    return foreground_loss + background_loss
+
+
+def _base_terms(final: torch.Tensor, initial: torch.Tensor, target: torch.Tensor | None = None) -> dict[str, torch.Tensor]:
+    desc = metrics.normalized_descriptors(final, initial=initial, target=target)
+    return {
+        "mass_ratio": desc["mass_ratio"],
+        "active_ratio": desc["active_ratio"],
+        "compactness_ratio": desc["compactness_ratio"],
+        "mass_fraction": desc["mass_fraction"],
+        "active_fraction": desc["active_fraction"],
+        "body_radius_norm": desc["body_radius_norm"],
+        "anisotropy": desc["anisotropy"],
+        "border_mass": desc["border_mass"],
+        "active_fraction_soft": soft_active_fraction(final),
+        "max_density": metrics.max_density(final),
+    }
+
+
+def move_shape_target_loss(
+    states: list[torch.Tensor],
+    *,
+    target: torch.Tensor,
+    weights: dict[str, float] | None = None,
+    objective: dict[str, object] | None = None,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    config = _deep_update(MOVE_SHAPE_TARGET_OBJECTIVE, objective)
+    weights = _weights(config, weights)
+    initial = states[0]
+    final = states[-1]
+    min_dim = float(min(final.shape))
+    terms = _base_terms(final, initial, target)
+    target_norm = metrics.target_distance(final, target) / min_dim
+    radius = max(min_dim * float(config["target_radius_norm"]), 2.0)
+    mask = target_sphere_mask(
+        tuple(int(v) for v in final.shape),
+        target,
+        radius=radius,
+        falloff_floor=float(config["target_falloff_floor"]),
+    )
+    target_mask_loss = F.mse_loss(final, mask * float(config["target_density"]))
+    balanced_loss = balanced_target_loss(final, mask, float(config["target_density"]))
+    mass_low, mass_high = _window(config, "mass_ratio")
+    active_low, active_high = _window(config, "active_ratio")
+    compact_low, compact_high = _window(config, "compactness_ratio")
+    mass_fraction_low, mass_fraction_high = _window(config, "mass_fraction")
+    active_fraction_low, active_fraction_high = _window(config, "active_fraction")
+    absolute_occupancy_loss = fraction_window_loss(terms["mass_fraction"], mass_fraction_low, mass_fraction_high) + fraction_window_loss(
+        terms["active_fraction"],
+        active_fraction_low,
+        active_fraction_high,
+    )
+    losses = {
+        "com": target_norm * target_norm,
+        "balanced_target": balanced_loss,
+        "target_mask": target_mask_loss,
+        "absolute_occupancy": absolute_occupancy_loss,
+        "mass_ratio": ratio_window_loss(terms["mass_ratio"], mass_low, mass_high),
+        "active_ratio": ratio_window_loss(terms["active_ratio"], active_low, active_high),
+        "compactness_ratio": ratio_window_loss(terms["compactness_ratio"], compact_low, compact_high),
+        "anisotropy": F.relu(terms["anisotropy"] - float(config["anisotropy_max"])) ** 2,
+        "border": terms["border_mass"] ** 2,
+        "visibility": F.relu(float(config["min_active_fraction_soft"]) - terms["active_fraction_soft"]) ** 2
+        + F.relu(float(config["min_max_density"]) - terms["max_density"]) ** 2,
+    }
+    total = sum(torch.as_tensor(weights[key], device=final.device, dtype=final.dtype) * value for key, value in losses.items())
+    return total, {**terms, **losses, "target_distance_norm": target_norm, "loss_total": total}
+
+
+def maintain_animal_profile_loss(
+    states: list[torch.Tensor],
+    *,
+    weights: dict[str, float] | None = None,
+    objective: dict[str, object] | None = None,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    config = _deep_update(MAINTAIN_ANIMAL_PROFILE_OBJECTIVE, objective)
+    weights = _weights(config, weights)
+    mass_low, mass_high = _window(config, "mass_ratio")
+    active_low, active_high = _window(config, "active_ratio")
+    compact_low, compact_high = _window(config, "compactness_ratio")
+    initial = states[0]
+    sampled_states = states[1:] or states
+    losses = []
+    last_terms: dict[str, torch.Tensor] = {}
+    for state in sampled_states:
+        terms = _base_terms(state, initial)
+        per_state = {
+            "mass_ratio": ratio_window_loss(terms["mass_ratio"], mass_low, mass_high),
+            "active_ratio": ratio_window_loss(terms["active_ratio"], active_low, active_high),
+            "compactness_ratio": ratio_window_loss(terms["compactness_ratio"], compact_low, compact_high),
+            "anisotropy": F.relu(terms["anisotropy"] - float(config["anisotropy_max"])) ** 2,
+            "border": terms["border_mass"] ** 2,
+            "visibility": F.relu(float(config["min_active_fraction_soft"]) - terms["active_fraction_soft"]) ** 2
+            + F.relu(float(config["min_max_density"]) - terms["max_density"]) ** 2,
+        }
+        losses.append(sum(torch.as_tensor(weights[key], device=state.device, dtype=state.dtype) * value for key, value in per_state.items()))
+        last_terms = {**terms, **per_state}
+    total = torch.stack(losses).mean()
+    return total, {**last_terms, "loss_total": total}
+
+
+PROFILE_LOSSES: dict[str, Callable[..., tuple[torch.Tensor, dict[str, torch.Tensor]]]] = {
+    "move_shape_target": move_shape_target_loss,
+    "maintain_animal_profile": maintain_animal_profile_loss,
+    "rescue_unstable_animal": maintain_animal_profile_loss,
+}
+
+
+def terms_to_json(terms: dict[str, torch.Tensor]) -> dict[str, float]:
+    return {key: float(value.detach().cpu()) for key, value in terms.items()}

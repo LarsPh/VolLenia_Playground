@@ -408,8 +408,7 @@ void App::mainLoop()
             openAnimalCatalogDialog();
         }
         if (ui_result.lenia_load_animal) {
-            loadAnimalCells(lenia_config_.selected_animal_index, false);
-            applyAnimalParams(lenia_config_.selected_animal_index, false);
+            loadAnimalNative(lenia_config_.selected_animal_index);
             volume_source_ = VolumeSource::Lenia;
             renderer_volume_dirty_ = true;
         } else if (ui_result.lenia_load_scaled_animal) {
@@ -703,6 +702,28 @@ bool App::loadAnimalCatalogRuntime(const std::filesystem::path& manifest_path)
     lenia_config_.selected_animal_index = 0;
     animal_catalog_error_.clear();
     return true;
+}
+
+void App::loadAnimalNative(int animal_index)
+{
+    if (animal_catalog_.count() <= 0) {
+        volume_status_.last_error = "No Lenia animal catalog is loaded.";
+        return;
+    }
+
+    const LeniaAnimalPreset& animal = animal_catalog_.animal(animal_index);
+    const bool cubic = animal.simulation_desc.nx == animal.simulation_desc.ny
+        && animal.simulation_desc.nx == animal.simulation_desc.nz;
+    if (cubic && animal.simulation_desc.nx > 0) {
+        const int native_resolution = std::clamp(animal.simulation_desc.nx, 16, 256);
+        if (lenia_config_.resolution != native_resolution) {
+            lenia_config_.resolution = native_resolution;
+            lenia_sim_dirty_ = true;
+        }
+    }
+
+    loadAnimalCells(animal_index, false);
+    applyAnimalParams(animal_index, false);
 }
 
 void App::loadAnimalCells(int animal_index, bool scaled)

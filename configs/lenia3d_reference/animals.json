@@ -30,7 +30,13 @@
         "s": 0.01,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 1,
@@ -58,7 +64,13 @@
         "s": 0.016,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 2,
@@ -87,7 +99,13 @@
         "s": 0.015,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 3,
@@ -113,7 +131,13 @@
         "s": 0.016,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 4,
@@ -139,7 +163,13 @@
         "s": 0.031,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 5,
@@ -167,7 +197,13 @@
         "s": 0.017,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 6,
@@ -196,7 +232,13 @@
         "s": 0.028,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 7,
@@ -225,7 +267,13 @@
         "s": 0.019,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 8,
@@ -253,7 +301,13 @@
         "s": 0.039,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 9,
@@ -281,7 +335,13 @@
         "s": 0.041,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 10,
@@ -309,7 +369,13 @@
         "s": 0.028,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 11,
@@ -337,7 +403,13 @@
         "s": 0.036,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 12,
@@ -364,7 +436,13 @@
         "s": 0.019,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 13,
@@ -391,7 +469,13 @@
         "s": 0.015,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 14,
@@ -418,7 +502,13 @@
         "s": 0.014,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 15,
@@ -445,7 +535,13 @@
         "s": 0.016,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 16,
@@ -472,7 +568,13 @@
         "s": 0.014,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 17,
@@ -501,7 +603,13 @@
         "s": 0.025,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 18,
@@ -530,7 +638,13 @@
         "s": 0.018,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 19,
@@ -558,7 +672,13 @@
         "s": 0.016,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 20,
@@ -586,7 +706,13 @@
         "s": 0.023,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 21,
@@ -613,7 +739,13 @@
         "s": 0.048,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 22,
@@ -640,7 +772,13 @@
         "s": 0.028,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 23,
@@ -666,7 +804,13 @@
         "s": 0.035,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 24,
@@ -693,7 +837,13 @@
         "s": 0.016,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 25,
@@ -720,7 +870,13 @@
         "s": 0.014,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 26,
@@ -749,7 +905,13 @@
         "s": 0.01,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 27,
@@ -778,7 +940,13 @@
         "s": 0.011,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 28,
@@ -805,7 +973,13 @@
         "s": 0.013,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 29,
@@ -832,7 +1006,13 @@
         "s": 0.005,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 30,
@@ -861,7 +1041,13 @@
         "s": 0.007,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 31,
@@ -890,7 +1076,13 @@
         "s": 0.008,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 32,
@@ -917,7 +1109,13 @@
         "s": 0.023,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 33,
@@ -943,7 +1141,13 @@
         "s": 0.019,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 34,
@@ -971,7 +1175,13 @@
         "s": 0.034,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     },
     {
       "id": 35,
@@ -997,7 +1207,13 @@
         "s": 0.015,
         "kn": 1,
         "gn": 1
-      }
+      },
+      "simulation_dims": [
+        64,
+        64,
+        64
+      ],
+      "resolution_policy": "cropped"
     }
   ]
 }

@@ -17,14 +17,21 @@ def require_cuda() -> None:
 def _clip_mode_id(clip_mode: str) -> int:
     if clip_mode == "hard":
         return 1
+    if clip_mode == "straight_through_hard":
+        return 2
     if clip_mode == "none":
         return 0
     raise ValueError(f"Unknown clip_mode: {clip_mode}")
 
 
-def _growth_from_id(u: torch.Tensor, m: float, s: float, gn: int) -> torch.Tensor:
-    diff = u - m
-    sigma = max(float(s), 1.0e-5)
+def _scalar_like(value: float | torch.Tensor, like: torch.Tensor) -> torch.Tensor:
+    return torch.as_tensor(value, device=like.device, dtype=like.dtype)
+
+
+def _growth_from_id(u: torch.Tensor, m: float | torch.Tensor, s: float | torch.Tensor, gn: int) -> torch.Tensor:
+    mu = _scalar_like(m, u)
+    sigma = torch.clamp(_scalar_like(s, u), min=1.0e-5)
+    diff = u - mu
     if gn == 2:
         return 2.0 * torch.exp(-(diff * diff) / (2.0 * sigma * sigma)) - 1.0
     if gn == 3:
@@ -37,9 +44,9 @@ def lenia_step_tensor(
     state: torch.Tensor,
     kernel_hat: torch.Tensor,
     shape: tuple[int, ...],
-    m: float,
-    s: float,
-    T: float,
+    m: float | torch.Tensor,
+    s: float | torch.Tensor,
+    T: float | torch.Tensor,
     gn: int,
     clip_mode_id: int,
 ) -> torch.Tensor:
@@ -48,9 +55,12 @@ def lenia_step_tensor(
     dims = tuple(range(state.ndim))
     state_hat = torch.fft.rfftn(state, dim=dims)
     u = torch.fft.irfftn(state_hat * kernel_hat, s=shape, dim=dims)
-    next_state = state + _growth_from_id(u, m, s, gn) / max(float(T), 1.0)
+    next_state = state + _growth_from_id(u, m, s, gn) / torch.clamp(_scalar_like(T, state), min=1.0)
     if clip_mode_id == 1:
         return torch.clamp(next_state, 0.0, 1.0)
+    if clip_mode_id == 2:
+        clipped = torch.clamp(next_state, 0.0, 1.0)
+        return next_state + (clipped - next_state).detach()
     return next_state
 
 
