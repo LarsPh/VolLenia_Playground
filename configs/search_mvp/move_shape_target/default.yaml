@@ -2,6 +2,14 @@ profile: move_shape_target
 
 source:
   source_size: 64
+  initialization:
+    mode: mixed_blobs
+    patch_size_fraction: [0.28, 0.55]
+    patch_density_scale: 0.65
+    patch_density_bias: 0.0
+    blob_count: [2, 5]
+    shell_probability: 0.35
+    noise_amplitude: 0.04
   rule_randomization:
     enabled: true
     probability: 1.0
@@ -27,10 +35,23 @@ simulation:
   size: 128
   steps: 50
 
+evaluation:
+  continuation_steps: [100, 200, 500]
+  stop_on_first_failure: true
+
 search:
   iterations: 160
-  random_init_count: 12
-  source_selection: best
+  random_init_count: 40
+  source_selection: top_weighted
+  source_selection_config:
+    top_k: 12
+    temperature: 6.0
+    score_field: score_100
+  source_injection:
+    enabled: true
+    every_iterations: 10
+    start_after_initial_pool: true
+    max_injections: 16
   mutation_std: null
   mutation:
     probability: 0.75
@@ -38,6 +59,11 @@ search:
     mutated_inner_optim_steps: 25
     initial_logit_probability: 0.70
     initial_logit_std: 0.02
+    precheck:
+      enabled: true
+      steps: 50
+      max_attempts: 4
+      accept_first_life_gate_pass: true
     rule:
       enabled: true
       probability: 0.60
@@ -64,8 +90,8 @@ optimization:
   optimizer:
     name: Adam
     lr: 0.08
-    initial_lr: null
-    param_lr: null
+    initial_lr: 0.008
+    param_lr: 0.0008
     max_grad_norm: null
 
 objective:
@@ -74,9 +100,45 @@ objective:
     min_max_density: 0.08
     mass_fraction: [0.0001, 0.06]
     active_fraction: [0.0005, 0.12]
-    body_radius_norm: [0.02, 0.28]
+    active_body_radius_norm: [0.02, 0.42]
     max_border_mass: 0.12
+    topology:
+      enabled: true
+      allowed: [blob, cylinder, plane]
+      active_threshold: 0.05
+      full_axis_span_min: 0.85
+      compact_axis_span_max: 0.72
+      compact_axis_border_mass_max: 0.18
+      by_type:
+        blob:
+          mass_fraction: [0.0001, 0.06]
+          active_fraction: [0.0005, 0.12]
+          active_body_radius_norm: [0.02, 0.42]
+          max_border_mass: 0.12
+        cylinder:
+          mass_fraction: [0.0001, 0.14]
+          active_fraction: [0.0005, 0.24]
+          compact_axis_span_norm: [0.01, 0.55]
+          compact_axis_border_mass_max: 0.18
+        plane:
+          mass_fraction: [0.0001, 0.18]
+          active_fraction: [0.0005, 0.35]
+          compact_axis_span_norm: [0.01, 0.72]
+          compact_axis_border_mass_max: 0.18
   target_offset_norm_zyx: [0.0, 0.0, 0.12]
+  target_profile:
+    mode: staged_offsets
+    stages:
+      - at_step_fraction: 0.5
+        offset_norm_zyx: [0.0, 0.0, 0.06]
+        weight_scale:
+          com: 0.35
+          balanced_target: 0.35
+      - at_step_fraction: 1.0
+        offset_norm_zyx: [0.0, 0.0, 0.12]
+        weight_scale:
+          com: 1.0
+          balanced_target: 1.0
   target_radius_norm: 0.08
   target_density: 0.8
   target_falloff_floor: 0.25

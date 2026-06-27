@@ -47,10 +47,11 @@ MOVE_SHAPE_TARGET_OBJECTIVE: dict[str, object] = {
 }
 
 
-MAINTAIN_ANIMAL_PROFILE_OBJECTIVE: dict[str, object] = {
+RESCUE_UNSTABLE_ANIMAL_OBJECTIVE: dict[str, object] = {
     "weights": {
         "mass_ratio": 25.0,
         "active_ratio": 10.0,
+        "absolute_occupancy": 8.0,
         "compactness_ratio": 5.0,
         "anisotropy": 0.25,
         "border": 2.0,
@@ -59,6 +60,8 @@ MAINTAIN_ANIMAL_PROFILE_OBJECTIVE: dict[str, object] = {
     "windows": {
         "mass_ratio": [0.4, 2.2],
         "active_ratio": [0.3, 2.5],
+        "mass_fraction": [0.00005, 0.18],
+        "active_fraction": [0.0002, 0.35],
         "compactness_ratio": [0.35, 3.0],
     },
     "anisotropy_max": 10.0,
@@ -100,12 +103,14 @@ def rollout_collect(
     T: float | torch.Tensor | None = None,
     clip_mode: str | None = None,
     sample_interval: int = 1,
-) -> list[torch.Tensor]:
+    return_steps: bool = False,
+) -> list[torch.Tensor] | tuple[list[torch.Tensor], list[int]]:
     base_params = (params or simulator.params).sanitized()
     clip_id = _clip_mode_id(clip_mode or simulator.clip_mode)
     use_simulator_step = m is None and s is None and T is None and (clip_mode is None or clip_mode == simulator.clip_mode)
     state = state0.to(device=simulator.device, dtype=simulator.dtype)
     states = [state]
+    state_steps = [0]
     for step_index in range(1, int(steps) + 1):
         if use_simulator_step:
             state = simulator.step(state)
@@ -120,8 +125,12 @@ def rollout_collect(
                 base_params.gn,
                 clip_id,
             )
-        if sample_interval > 0 and step_index % sample_interval == 0:
+        should_sample = sample_interval > 0 and step_index % sample_interval == 0
+        if should_sample or step_index == int(steps):
             states.append(state)
+            state_steps.append(step_index)
+    if return_steps:
+        return states, state_steps
     return states
 
 
@@ -167,6 +176,17 @@ def balanced_target_loss(state: torch.Tensor, target_mask: torch.Tensor, target_
     return foreground_loss + background_loss
 
 
+def target_from_initial_offset(initial: torch.Tensor, offset_norm_zyx: list[float] | tuple[float, ...]) -> torch.Tensor:
+    com = metrics.normalized_descriptors(initial)["com_norm"] * torch.tensor(
+        [max(size - 1, 1) for size in initial.shape],
+        device=initial.device,
+        dtype=initial.dtype,
+    )
+    offset = torch.tensor([float(value) * float(min(initial.shape)) for value in offset_norm_zyx], device=initial.device, dtype=initial.dtype)
+    max_coord = torch.tensor([size - 1 for size in initial.shape], device=initial.device, dtype=initial.dtype)
+    return torch.minimum(torch.maximum(com + offset, torch.zeros_like(com)), max_coord)
+
+
 def _base_terms(final: torch.Tensor, initial: torch.Tensor, target: torch.Tensor | None = None) -> dict[str, torch.Tensor]:
     desc = metrics.normalized_descriptors(final, initial=initial, target=target)
     return {
@@ -183,12 +203,44 @@ def _base_terms(final: torch.Tensor, initial: torch.Tensor, target: torch.Tensor
     }
 
 
+def _nearest_state_for_step(states: list[torch.Tensor], state_steps: list[int] | None, desired_step: int) -> tuple[torch.Tensor, int]:
+    if not states:
+        raise ValueError("states must contain at least one tensor")
+    if not state_steps or len(state_steps) != len(states):
+        return states[-1], len(states) - 1
+    index = min(range(len(state_steps)), key=lambda item: abs(int(state_steps[item]) - int(desired_step)))
+    return states[index], int(state_steps[index])
+
+
+def _target_losses_for_state(
+    state: torch.Tensor,
+    target: torch.Tensor,
+    *,
+    radius: float,
+    target_density: float,
+    falloff_floor: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    min_dim = float(min(state.shape))
+    target_norm = metrics.target_distance(state, target) / min_dim
+    mask = target_sphere_mask(
+        tuple(int(v) for v in state.shape),
+        target,
+        radius=radius,
+        falloff_floor=falloff_floor,
+    )
+    target_mask_loss = F.mse_loss(state, mask * float(target_density))
+    balanced_loss = balanced_target_loss(state, mask, float(target_density))
+    return target_norm, target_norm * target_norm, balanced_loss, target_mask_loss
+
+
 def move_shape_target_loss(
     states: list[torch.Tensor],
     *,
     target: torch.Tensor,
     weights: dict[str, float] | None = None,
     objective: dict[str, object] | None = None,
+    state_steps: list[int] | None = None,
+    total_steps: int | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     config = _deep_update(MOVE_SHAPE_TARGET_OBJECTIVE, objective)
     weights = _weights(config, weights)
@@ -196,16 +248,63 @@ def move_shape_target_loss(
     final = states[-1]
     min_dim = float(min(final.shape))
     terms = _base_terms(final, initial, target)
-    target_norm = metrics.target_distance(final, target) / min_dim
     radius = max(min_dim * float(config["target_radius_norm"]), 2.0)
-    mask = target_sphere_mask(
-        tuple(int(v) for v in final.shape),
-        target,
-        radius=radius,
-        falloff_floor=float(config["target_falloff_floor"]),
-    )
-    target_mask_loss = F.mse_loss(final, mask * float(config["target_density"]))
-    balanced_loss = balanced_target_loss(final, mask, float(config["target_density"]))
+    target_profile = config.get("target_profile")
+    target_profile_enabled = isinstance(target_profile, dict) and target_profile.get("mode") == "staged_offsets"
+    stage_terms: dict[str, torch.Tensor] = {}
+    if target_profile_enabled:
+        target_norm = torch.zeros((), device=final.device, dtype=final.dtype)
+        com_loss = torch.zeros((), device=final.device, dtype=final.dtype)
+        balanced_loss = torch.zeros((), device=final.device, dtype=final.dtype)
+        target_mask_loss = torch.zeros((), device=final.device, dtype=final.dtype)
+        stages = list(target_profile.get("stages", []))
+        final_step = int(total_steps if total_steps is not None else (state_steps[-1] if state_steps else len(states) - 1))
+        for index, stage in enumerate(stages):
+            if not isinstance(stage, dict):
+                continue
+            if "at_step" in stage:
+                desired_step = int(float(stage["at_step"]))
+            else:
+                desired_step = int(round(float(stage.get("at_step_fraction", 1.0)) * float(final_step)))
+            stage_state, sampled_step = _nearest_state_for_step(states, state_steps, desired_step)
+            offset = stage.get("offset_norm_zyx", config.get("target_offset_norm_zyx", [0.0, 0.0, 0.12]))
+            stage_target = target_from_initial_offset(initial, list(offset))
+            stage_target_norm, stage_com_loss, stage_balanced_loss, stage_target_mask_loss = _target_losses_for_state(
+                stage_state,
+                stage_target,
+                radius=radius,
+                target_density=float(config["target_density"]),
+                falloff_floor=float(config["target_falloff_floor"]),
+            )
+            scales = dict(stage.get("weight_scale", {}))
+            com_scale = float(scales.get("com", 1.0))
+            balanced_scale = float(scales.get("balanced_target", 1.0))
+            target_mask_scale = float(scales.get("target_mask", 1.0))
+            target_norm = stage_target_norm
+            com_loss = com_loss + stage_com_loss * com_scale
+            balanced_loss = balanced_loss + stage_balanced_loss * balanced_scale
+            target_mask_loss = target_mask_loss + stage_target_mask_loss * target_mask_scale
+            stage_terms[f"stage_{index}_sampled_step"] = torch.as_tensor(float(sampled_step), device=final.device, dtype=final.dtype)
+            stage_terms[f"stage_{index}_target_distance_norm"] = stage_target_norm
+            stage_terms[f"stage_{index}_com"] = stage_com_loss
+            stage_terms[f"stage_{index}_balanced_target"] = stage_balanced_loss
+            stage_terms[f"stage_{index}_target_mask"] = stage_target_mask_loss
+        if not stages:
+            target_norm, com_loss, balanced_loss, target_mask_loss = _target_losses_for_state(
+                final,
+                target,
+                radius=radius,
+                target_density=float(config["target_density"]),
+                falloff_floor=float(config["target_falloff_floor"]),
+            )
+    else:
+        target_norm, com_loss, balanced_loss, target_mask_loss = _target_losses_for_state(
+            final,
+            target,
+            radius=radius,
+            target_density=float(config["target_density"]),
+            falloff_floor=float(config["target_falloff_floor"]),
+        )
     mass_low, mass_high = _window(config, "mass_ratio")
     active_low, active_high = _window(config, "active_ratio")
     compact_low, compact_high = _window(config, "compactness_ratio")
@@ -217,7 +316,7 @@ def move_shape_target_loss(
         active_fraction_high,
     )
     losses = {
-        "com": target_norm * target_norm,
+        "com": com_loss,
         "balanced_target": balanced_loss,
         "target_mask": target_mask_loss,
         "absolute_occupancy": absolute_occupancy_loss,
@@ -230,19 +329,21 @@ def move_shape_target_loss(
         + F.relu(float(config["min_max_density"]) - terms["max_density"]) ** 2,
     }
     total = sum(torch.as_tensor(weights[key], device=final.device, dtype=final.dtype) * value for key, value in losses.items())
-    return total, {**terms, **losses, "target_distance_norm": target_norm, "loss_total": total}
+    return total, {**terms, **losses, **stage_terms, "target_distance_norm": target_norm, "loss_total": total}
 
 
-def maintain_animal_profile_loss(
+def rescue_unstable_animal_loss(
     states: list[torch.Tensor],
     *,
     weights: dict[str, float] | None = None,
     objective: dict[str, object] | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    config = _deep_update(MAINTAIN_ANIMAL_PROFILE_OBJECTIVE, objective)
+    config = _deep_update(RESCUE_UNSTABLE_ANIMAL_OBJECTIVE, objective)
     weights = _weights(config, weights)
     mass_low, mass_high = _window(config, "mass_ratio")
     active_low, active_high = _window(config, "active_ratio")
+    mass_fraction_low, mass_fraction_high = _window(config, "mass_fraction")
+    active_fraction_low, active_fraction_high = _window(config, "active_fraction")
     compact_low, compact_high = _window(config, "compactness_ratio")
     initial = states[0]
     sampled_states = states[1:] or states
@@ -253,6 +354,8 @@ def maintain_animal_profile_loss(
         per_state = {
             "mass_ratio": ratio_window_loss(terms["mass_ratio"], mass_low, mass_high),
             "active_ratio": ratio_window_loss(terms["active_ratio"], active_low, active_high),
+            "absolute_occupancy": fraction_window_loss(terms["mass_fraction"], mass_fraction_low, mass_fraction_high)
+            + fraction_window_loss(terms["active_fraction"], active_fraction_low, active_fraction_high),
             "compactness_ratio": ratio_window_loss(terms["compactness_ratio"], compact_low, compact_high),
             "anisotropy": F.relu(terms["anisotropy"] - float(config["anisotropy_max"])) ** 2,
             "border": terms["border_mass"] ** 2,
@@ -267,8 +370,7 @@ def maintain_animal_profile_loss(
 
 PROFILE_LOSSES: dict[str, Callable[..., tuple[torch.Tensor, dict[str, torch.Tensor]]]] = {
     "move_shape_target": move_shape_target_loss,
-    "maintain_animal_profile": maintain_animal_profile_loss,
-    "rescue_unstable_animal": maintain_animal_profile_loss,
+    "rescue_unstable_animal": rescue_unstable_animal_loss,
 }
 
 

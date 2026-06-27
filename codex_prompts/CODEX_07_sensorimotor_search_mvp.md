@@ -1,5 +1,7 @@
 # Codex prompt — PLAN 07 Sensorimotor-style differentiable search MVP
 
+> Current status note: `maintain_animal_profile` was removed in the later rescue refactor. The active CLI profiles are `move_shape_target` and `rescue_unstable_animal`; future stable-animal optimization should be a separate strategy.
+
 You are working in:
 
 ```text
@@ -105,22 +107,13 @@ Loss terms:
 - border loss;
 - visibility/active voxel loss.
 
-#### `maintain_animal_profile`
+#### Removed: `maintain_animal_profile`
 
-Search around a known stable Lenia3D animal.
+This profile was removed after the rescue refactor. Future stable-animal optimization should be implemented as a separate strategy rather than restoring this name.
 
-Loss terms:
+#### `rescue_unstable_animal`
 
-- mass ratio window across rollout;
-- active ratio window;
-- compactness ratio window;
-- anisotropy ceiling;
-- border loss;
-- visibility loss.
-
-#### `rescue_unstable_animal` optional
-
-Thin wrapper around `maintain_animal_profile` with an unstable animal allow-list. If time is short, implement Profile A and B first.
+Repair search for unstable/rescale-fragile catalog animals. It uses multiple source-level repair branches, small archive-derived mutations, and long hard-eval continuation gates.
 
 ### E. Search script
 
@@ -133,7 +126,7 @@ python/scripts/search_sensorimotor_mvp.py
 It should support CLI args similar to:
 
 ```text
---profile move_shape_target|maintain_animal_profile|rescue_unstable_animal
+--profile move_shape_target|rescue_unstable_animal
 --catalog configs/lenia3d_reference/animals.json
 --animal <slug-or-index-or-substring>
 --size 32|64
@@ -212,21 +205,18 @@ uv run python python/scripts/search_sensorimotor_mvp.py `
 
 ```powershell
 uv run python python/scripts/search_sensorimotor_mvp.py `
-  --profile maintain_animal_profile `
-  --catalog configs/lenia3d_reference/animals.json `
-  --animal "Diguttome" `
+  --config configs/search_mvp/rescue_unstable_animal/default.yaml `
   --size 64 `
   --steps 16 `
   --iterations 3 `
   --inner-optim-steps 3 `
-  --train-clip-mode straight_through_hard `
-  --out outputs/search_mvp/smoke_maintain_animal
+  --out outputs/search_mvp/smoke_rescue_animal
 ```
 
 After the second command, the C++ app should be able to open:
 
 ```text
-outputs/search_mvp/smoke_maintain_animal/catalog.json
+outputs/search_mvp/smoke_rescue_animal/catalog.json
 ```
 
 via the Animal Catalog file picker and render candidates.

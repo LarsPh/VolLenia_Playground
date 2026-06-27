@@ -110,6 +110,19 @@ def border_mass(state: torch.Tensor, width: int = 2, eps: float = 1.0e-8) -> tor
     return (state * mask).sum() / (mass(state) + eps)
 
 
+def axis_border_mass(state: torch.Tensor, width: int = 2, eps: float = 1.0e-8) -> torch.Tensor:
+    values: list[torch.Tensor] = []
+    total = mass(state) + eps
+    for axis, size in enumerate(state.shape):
+        index = torch.arange(int(size), device=state.device)
+        axis_mask = (index < int(width)) | (index >= int(size) - int(width))
+        view_shape = [1 for _ in state.shape]
+        view_shape[axis] = int(size)
+        mask = axis_mask.reshape(view_shape).to(dtype=state.dtype)
+        values.append((state * mask).sum() / total)
+    return torch.stack(values)
+
+
 def active_voxels(state: torch.Tensor, threshold: float = 0.05) -> torch.Tensor:
     return (state > threshold).sum()
 
@@ -124,6 +137,41 @@ def density_view(state: torch.Tensor, mode: str = "raw") -> torch.Tensor:
     if mode == "softplus":
         return torch.nn.functional.softplus(state)
     raise ValueError(f"Unknown density view mode: {mode}")
+
+
+def _axis_projection(mask: torch.Tensor, axis: int) -> torch.Tensor:
+    dims = tuple(index for index in range(mask.ndim) if index != axis)
+    return mask.to(dtype=torch.bool).any(dim=dims)
+
+
+def _circular_span_norm(projection: torch.Tensor) -> torch.Tensor:
+    projection = projection.to(dtype=torch.bool)
+    size = int(projection.numel())
+    dtype = torch.float32
+    if size == 0:
+        return torch.zeros((), device=projection.device, dtype=dtype)
+    active_index = torch.nonzero(projection, as_tuple=False).flatten()
+    active_count = int(active_index.numel())
+    if active_count == 0:
+        return torch.zeros((), device=projection.device, dtype=dtype)
+    if active_count == size:
+        return torch.ones((), device=projection.device, dtype=dtype)
+    gaps = active_index[1:] - active_index[:-1] - 1
+    wrap_gap = active_index[0] + size - active_index[-1] - 1
+    max_gap = torch.cat([gaps, wrap_gap.reshape(1)]).max()
+    span = torch.as_tensor(size, device=projection.device, dtype=dtype) - max_gap.to(dtype=dtype)
+    return span / float(size)
+
+
+def active_axis_descriptors(state: torch.Tensor, active_threshold: float = 0.05) -> tuple[torch.Tensor, torch.Tensor]:
+    active_mask = state > float(active_threshold)
+    coverage: list[torch.Tensor] = []
+    circular_span: list[torch.Tensor] = []
+    for axis, size in enumerate(state.shape):
+        projection = _axis_projection(active_mask, axis)
+        coverage.append(projection.to(dtype=state.dtype).mean())
+        circular_span.append(_circular_span_norm(projection).to(device=state.device, dtype=state.dtype))
+    return torch.stack(coverage), torch.stack(circular_span)
 
 
 def normalized_descriptors(
@@ -142,16 +190,26 @@ def normalized_descriptors(
     com = center_of_mass(state, coords, eps=eps)
     moment = second_moment(state, coords, com, eps=eps)
     eigvals = torch.linalg.eigvalsh(covariance(state, coords, com, eps=eps))
-    active = active_voxels(state, threshold=active_threshold).to(dtype=state.dtype)
+    active_mask = (state > active_threshold).to(dtype=state.dtype)
+    active = active_mask.sum()
+    active_moment = second_moment(active_mask, coords, eps=eps)
+    active_axis_coverage, active_axis_circular_span = active_axis_descriptors(state, active_threshold=active_threshold)
+    full_axis_count = (active_axis_circular_span >= 0.85).to(dtype=state.dtype).sum()
     descriptor: dict[str, torch.Tensor] = {
         "mass_fraction": state_mass / volume_voxels,
         "active_fraction": active / volume_voxels,
         "second_moment_norm": moment / (min_dim * min_dim),
         "body_radius": torch.sqrt(torch.clamp(moment, min=0.0) + eps),
+        "active_body_radius": torch.sqrt(torch.clamp(active_moment, min=0.0) + eps),
         "anisotropy": eigvals[-1] / (eigvals[0] + eps),
         "border_mass": border_mass(state, eps=eps),
+        "axis_border_mass": axis_border_mass(state, eps=eps),
+        "active_axis_coverage_norm": active_axis_coverage,
+        "active_axis_circular_span_norm": active_axis_circular_span,
+        "full_axis_count": full_axis_count,
     }
     descriptor["body_radius_norm"] = descriptor["body_radius"] / min_dim
+    descriptor["active_body_radius_norm"] = descriptor["active_body_radius"] / min_dim
     shape_tensor = torch.tensor(
         [max(size - 1, 1) for size in shape],
         device=state.device,
@@ -204,6 +262,13 @@ def state_summary(state: torch.Tensor, target: torch.Tensor | None = None) -> di
         summary["mass_fraction"] = float(descriptors["mass_fraction"].detach().cpu())
         summary["active_fraction"] = float(descriptors["active_fraction"].detach().cpu())
         summary["body_radius_norm"] = float(descriptors["body_radius_norm"].detach().cpu())
+        summary["active_body_radius_norm"] = float(descriptors["active_body_radius_norm"].detach().cpu())
+        summary["axis_border_mass"] = [float(v) for v in descriptors["axis_border_mass"].detach().cpu().reshape(-1).tolist()]
+        summary["active_axis_coverage_norm"] = [float(v) for v in descriptors["active_axis_coverage_norm"].detach().cpu().reshape(-1).tolist()]
+        summary["active_axis_circular_span_norm"] = [
+            float(v) for v in descriptors["active_axis_circular_span_norm"].detach().cpu().reshape(-1).tolist()
+        ]
+        summary["full_axis_count"] = int(descriptors["full_axis_count"].detach().cpu())
         if target is not None:
             summary["target_distance"] = float(target_distance(state, target).detach().cpu())
         return summary

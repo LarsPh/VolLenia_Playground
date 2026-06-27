@@ -2,7 +2,7 @@ profile: rescue_unstable_animal
 
 source:
   catalog: configs/lenia3d_reference/animals.json
-  animal: Diguttome
+  animal: stylomembranome_limus
   initialization:
     mode: blob_shell
     patch_size_fraction: [0.28, 0.55]
@@ -21,11 +21,11 @@ source:
     gn_probability: 0.0
     gn_choices: []
     R_probability: 1.0
-    R_log_std: 0.08
+    R_log_std: 0.12
     m_probability: 1.0
-    m_std: 0.015
+    m_std: 0.02
     s_probability: 1.0
-    s_log_std: 0.12
+    s_log_std: 0.16
     b_probability: 0.0
     b_element_probability: 1.0
     b_std: 0.0
@@ -37,12 +37,12 @@ simulation:
   steps: 50
 
 evaluation:
-  continuation_steps: [100, 200, 500, 1000]
+  continuation_steps: [100, 200, 500, 1000, 2000]
   stop_on_first_failure: true
 
 search:
-  iterations: 64
-  random_init_count: 16
+  iterations: 24
+  random_init_count: 8
   source_selection: top_weighted
   source_selection_config:
     top_k: 12
@@ -57,9 +57,9 @@ search:
   mutation:
     probability: 0.75
     no_mutation_every_iterations: 5
-    mutated_inner_optim_steps: 40
+    mutated_inner_optim_steps: 60
     initial_logit_probability: 0.60
-    initial_logit_std: 0.01
+    initial_logit_std: 0.012
     precheck:
       enabled: true
       steps: 50
@@ -67,13 +67,13 @@ search:
       accept_first_life_gate_pass: true
     rule:
       enabled: true
-      probability: 0.70
-      R_probability: 0.50
-      R_log_std: 0.05
-      m_probability: 0.80
-      m_std: 0.008
-      s_probability: 0.80
-      s_log_std: 0.08
+      probability: 0.75
+      R_probability: 0.60
+      R_log_std: 0.08
+      m_probability: 0.85
+      m_std: 0.012
+      s_probability: 0.85
+      s_log_std: 0.12
       b_probability: 0.0
       b_element_probability: 0.0
       b_std: 0.0
@@ -83,7 +83,7 @@ search:
   debug_allow_size_32: false
 
 optimization:
-  inner_optim_steps: 125
+  inner_optim_steps: 250
   train_clip_mode: straight_through_hard
   eval_clip_mode: hard
   optimize_params: [m, s]
@@ -145,7 +145,7 @@ objective:
     compactness_ratio: [0.35, 3.0]
 
 export:
-  out: outputs/search_mvp/rescue_unstable_animal_default
+  out: outputs/search_mvp/rescue_animal24_probe
   export_top_k: 3
   save_initial_states: true
   checkpoint_every_iterations: 5

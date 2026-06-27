@@ -1,5 +1,7 @@
 # PLAN 07 — Sensorimotor-style differentiable search MVP, no obstacles
 
+> Current status note: `maintain_animal_profile` was removed in the later rescue refactor. The active strategies are now `move_shape_target` for from-zero target search and `rescue_unstable_animal` for unstable animal repair. A future "from stable animal optimization" strategy should be introduced separately instead of reusing the maintain name.
+
 ## Purpose
 
 Build the first real VolLenia search loop. This milestone should not be just cleanup and should not jump all the way to MAP-Elites or resource environments. It should create a minimal Sensorimotor-style loop:
@@ -255,42 +257,21 @@ Notes:
 - To avoid pure target-shape painting, keep mass/compactness/anisotropy terms active.
 - Evaluate final candidate in hard mode even if trained with straight-through.
 
-### Profile B — `maintain_animal_profile`
+### Removed profile — `maintain_animal_profile`
 
-Purpose:
+Current status:
+
+```text
+Removed after the rescue refactor. Future stable-animal optimization should be a separate strategy.
+```
+
+Original intent:
 
 ```text
 Search around a known stable Lenia3D animal for nearby stable variants.
 ```
 
-Default source:
-
-```text
-stable Lenia3D animals from current catalog
-```
-
-Optimization target:
-
-```text
-stay alive and visually coherent over a window
-keep normalized mass, active fraction, compactness, anisotropy, and border mass in reasonable ranges
-```
-
-Loss terms:
-
-```text
-mass_ratio_window_loss
-active_ratio_window_loss
-compactness_ratio_window_loss
-anisotropy_ceiling_loss
-border_loss
-visibility_loss
-optional recurrence / final-vs-mid metric later
-```
-
-This profile is not trying to move. It is the baseline “what is a VolLenia organism?” profile.
-
-### Profile C — `rescue_unstable_animal`
+### Profile B — `rescue_unstable_animal`
 
 Purpose:
 
@@ -346,7 +327,7 @@ python/scripts/search_sensorimotor_mvp.py
 Suggested arguments:
 
 ```text
---profile move_shape_target|maintain_animal_profile|rescue_unstable_animal
+--profile move_shape_target|rescue_unstable_animal
 --catalog configs/lenia3d_reference/animals.json
 --animal <slug-or-index-or-display-substring>
 --size 32|64
@@ -534,15 +515,12 @@ uv run python python/scripts/search_sensorimotor_mvp.py \
   --out outputs/search_mvp/smoke_move_hard
 
 uv run python python/scripts/search_sensorimotor_mvp.py \
-  --profile maintain_animal_profile \
-  --catalog configs/lenia3d_reference/animals.json \
-  --animal "Diguttome" \
+  --config configs/search_mvp/rescue_unstable_animal/default.yaml \
   --size 64 \
   --steps 16 \
   --iterations 3 \
   --inner-optim-steps 3 \
-  --train-clip-mode straight_through_hard \
-  --out outputs/search_mvp/smoke_maintain_animal
+  --out outputs/search_mvp/smoke_rescue_animal
 ```
 
 Expected outputs:

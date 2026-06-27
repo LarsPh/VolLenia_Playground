@@ -208,14 +208,17 @@ def make_seed_state(
     device: torch.device | str | None = None,
     dtype: torch.dtype = torch.float32,
     seed: int = 1,
+    mode: str = "blob_shell",
+    config: dict[str, object] | None = None,
 ) -> torch.Tensor:
-    """Create a compact deterministic soft blob field without voxel Python loops."""
+    """Create a deterministic procedural seed field without voxel Python loops."""
 
     device = torch.device(device or "cpu")
     if device.type != "cuda":
         raise RuntimeError("make_seed_state is GPU-only; pass device='cuda'.")
     require_cuda()
     shape = tuple(int(v) for v in shape)
+    config = config or {}
     generator = torch.Generator(device=device)
     generator.manual_seed(int(seed))
     axes = [torch.linspace(-1.0, 1.0, steps=size, device=device, dtype=dtype) for size in shape]
@@ -223,6 +226,53 @@ def make_seed_state(
     radius2 = torch.zeros(shape, device=device, dtype=dtype)
     for grid in grids:
         radius2 = radius2 + grid * grid
+
+    if mode == "random_patch":
+        min_dim = min(shape)
+        size_range = config.get("patch_size_fraction", [0.28, 0.55])
+        low_frac, high_frac = [float(value) for value in size_range]  # type: ignore[arg-type]
+        low_size = max(2, int(round(low_frac * min_dim)))
+        high_size = max(low_size, int(round(high_frac * min_dim)))
+        patch_size = int(torch.randint(low_size, high_size + 1, (), device=device, generator=generator).item())
+        patch_shape = tuple(min(patch_size, size) for size in shape)
+        patch = torch.rand(patch_shape, device=device, dtype=dtype, generator=generator)
+        density_scale = float(config.get("patch_density_scale", 0.65))
+        density_bias = float(config.get("patch_density_bias", 0.0))
+        state = torch.zeros(shape, device=device, dtype=dtype)
+        slices = tuple(slice((size - patch) // 2, (size - patch) // 2 + patch) for size, patch in zip(shape, patch_shape, strict=True))
+        state[slices] = torch.clamp(density_bias + density_scale * patch, 0.0, 1.0)
+        return state
+
+    if mode == "mixed_blobs":
+        count_range = config.get("blob_count", [2, 5])
+        low_count, high_count = [int(value) for value in count_range]  # type: ignore[arg-type]
+        blob_count = int(torch.randint(max(low_count, 1), max(high_count, low_count) + 1, (), device=device, generator=generator).item())
+        state = torch.zeros(shape, device=device, dtype=dtype)
+        for _ in range(blob_count):
+            center = [
+                float(torch.empty((), device=device, dtype=dtype).uniform_(-0.45, 0.45, generator=generator).item())
+                for _axis in shape
+            ]
+            radius = float(torch.empty((), device=device, dtype=dtype).uniform_(0.12, 0.38, generator=generator).item())
+            amplitude = float(torch.empty((), device=device, dtype=dtype).uniform_(0.10, 0.55, generator=generator).item())
+            blob_radius2 = torch.zeros(shape, device=device, dtype=dtype)
+            for grid, center_value in zip(grids, center, strict=True):
+                blob_radius2 = blob_radius2 + (grid - center_value) * (grid - center_value)
+            state = state + amplitude * torch.exp(-blob_radius2 / max(radius * radius, 1.0e-4))
+        shell_probability = float(config.get("shell_probability", 0.35))
+        if float(torch.rand((), device=device, generator=generator).item()) < shell_probability:
+            shell_radius = float(torch.empty((), device=device, dtype=dtype).uniform_(0.25, 0.60, generator=generator).item())
+            shell_width = float(torch.empty((), device=device, dtype=dtype).uniform_(0.010, 0.045, generator=generator).item())
+            shell_amp = float(torch.empty((), device=device, dtype=dtype).uniform_(0.05, 0.25, generator=generator).item())
+            state = state + shell_amp * torch.exp(-((torch.sqrt(radius2) - shell_radius) ** 2) / shell_width)
+        noise_amp = float(config.get("noise_amplitude", 0.04))
+        if noise_amp > 0.0:
+            state = state + noise_amp * torch.rand(shape, device=device, dtype=dtype, generator=generator) * (radius2 < 0.75)
+        return torch.clamp(state, 0.0, 1.0)
+
+    if mode != "blob_shell":
+        raise ValueError(f"Unknown procedural seed mode: {mode}")
+
     blob = torch.exp(-radius2 / 0.12)
     noise = torch.rand(shape, device=device, dtype=dtype, generator=generator)
     shell = torch.exp(-((torch.sqrt(radius2) - 0.45) ** 2) / 0.018)
