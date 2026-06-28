@@ -4,8 +4,8 @@
 
 #include <cuda_runtime.h>
 
-#include <algorithm>
 #include <cmath>
+#include <algorithm>
 
 namespace vollenia {
 
@@ -125,7 +125,7 @@ __global__ void flowTransportSigmaHalfKernel(
     const float3* flow_channel,
     VolumeDesc desc,
     float dt,
-    float flow_max,
+    float transport_sigma,
     int dd,
     FlowBorder border)
 {
@@ -139,7 +139,8 @@ __global__ void flowTransportSigmaHalfKernel(
     const float target_x = static_cast<float>(x) + 0.5f;
     const float target_y = static_cast<float>(y) + 0.5f;
     const float target_z = static_cast<float>(z) + 0.5f;
-    const float ma = fmaxf(static_cast<float>(dd) - 0.5f, 0.0f);
+    const float sigma = fmaxf(transport_sigma, 1.0e-6f);
+    const float ma = fmaxf(static_cast<float>(dd) - sigma, 0.0f);
     float total = 0.0f;
 
     for (int oz = -dd; oz <= dd; ++oz) {
@@ -239,16 +240,36 @@ void launchFlowTransportSigmaHalf(
     VolumeDesc desc,
     float dt,
     float flow_max,
+    float transport_sigma,
+    int reintegration_dd,
     FlowBorder border)
 {
-    const int dd = std::max(1, static_cast<int>(std::ceil(flow_max + 1.0e-6f)));
+    const int dd = flowTransportDd(dt, flow_max, transport_sigma, reintegration_dd);
     const dim3 block(8, 8, 8);
     const dim3 grid(
         (static_cast<unsigned int>(desc.nx) + block.x - 1U) / block.x,
         (static_cast<unsigned int>(desc.ny) + block.y - 1U) / block.y,
         (static_cast<unsigned int>(desc.nz) + block.z - 1U) / block.z);
-    flowTransportSigmaHalfKernel<<<grid, block>>>(next_channel, state_channel, flow_channel, desc, dt, flow_max, dd, border);
+    flowTransportSigmaHalfKernel<<<grid, block>>>(
+        next_channel,
+        state_channel,
+        flow_channel,
+        desc,
+        dt,
+        transport_sigma,
+        dd,
+        border);
     VOL_CUDA_CHECK(cudaGetLastError());
+}
+
+int flowTransportDd(float dt, float flow_max, float transport_sigma, int reintegration_dd)
+{
+    if (reintegration_dd > 0) {
+        return reintegration_dd;
+    }
+    const float max_displacement = std::max(0.0f, dt * flow_max);
+    const float sigma = std::max(transport_sigma, 0.0f);
+    return std::max(1, static_cast<int>(std::ceil(max_displacement + sigma - 1.0e-6f)));
 }
 
 } // namespace vollenia

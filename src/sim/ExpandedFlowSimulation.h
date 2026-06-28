@@ -26,6 +26,8 @@ struct ExpandedFlowStatus {
     double mass_before = 0.0;
     double mass_after = 0.0;
     double mass_ratio = 1.0;
+    bool mass_diagnostics_enabled = false;
+    int reintegration_dd = 1;
     const char* update_mode = "unknown";
     std::string model_name;
     std::string status = "Not initialized";
@@ -43,7 +45,9 @@ public:
     void initialize(VolumeDesc desc, const ModelSpec& spec);
     void resetSeed(unsigned int seed);
     void simulateSteps(int steps);
+    void setMassDiagnosticsEnabled(bool enabled);
     void setRenderChannel(int channel);
+    void resetStateFromHost(VolumeDesc desc, int channels, const std::vector<float>& state_values);
     void destroy();
 
     [[nodiscard]] DeviceVolumeView currentRenderView() const;
@@ -85,6 +89,7 @@ private:
     int channels_ = 0;
     int render_channel_ = 0;
     unsigned int seed_ = 1;
+    bool mass_diagnostics_enabled_ = false;
     ExpandedFlowStatus status_;
 };
 

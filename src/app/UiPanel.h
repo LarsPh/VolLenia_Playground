@@ -23,7 +23,9 @@ struct UiPanelResult {
     bool lenia_reload_catalog = false;
     bool lenia_open_catalog_dialog = false;
     bool modelspec_open_dialog = false;
+    bool modelspec_open_state_dialog = false;
     bool modelspec_reload = false;
+    bool modelspec_reload_state = false;
     bool modelspec_reset_seed = false;
     bool modelspec_regenerate_seed = false;
     bool modelspec_single_step = false;

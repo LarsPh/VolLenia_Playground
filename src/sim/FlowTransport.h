@@ -29,6 +29,9 @@ void launchFlowTransportSigmaHalf(
     VolumeDesc desc,
     float dt,
     float flow_max,
+    float transport_sigma,
+    int reintegration_dd,
     FlowBorder border);
+int flowTransportDd(float dt, float flow_max, float transport_sigma, int reintegration_dd);
 
 } // namespace vollenia

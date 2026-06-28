@@ -76,6 +76,7 @@ struct ModelSpecConfig {
     bool playing = true;
     bool staged_dirty = false;
     bool composite_render = false;
+    bool mass_diagnostics_enabled = false;
     int steps_per_frame = 1;
     int resolution = 64;
     int render_channel = 0;
@@ -84,6 +85,7 @@ struct ModelSpecConfig {
     std::array<bool, kMaxCompositeChannels> composite_enabled {true, true, true, true};
     std::array<float, kMaxCompositeChannels> composite_intensity {1.0f, 1.0f, 0.85f, 0.85f};
     std::string model_path = "configs/modelspec/expanded_single_kernel.json";
+    std::string state_path;
     std::string load_error;
     std::string edit_error;
 };
@@ -125,8 +127,10 @@ private:
     void drawUploadedModelVolume(const char* status_text);
     void openAnimalCatalogDialog();
     void openModelSpecDialog();
+    void openModelStateDialog();
     bool loadAnimalCatalogRuntime(const std::filesystem::path& manifest_path);
     bool loadModelSpecRuntime(const std::filesystem::path& spec_path);
+    bool loadModelStateRuntime(const std::filesystem::path& manifest_path);
     void loadAnimalNative(int animal_index);
     void loadAnimalCells(int animal_index, bool scaled);
     void applyAnimalParams(int animal_index, bool scale_radius);

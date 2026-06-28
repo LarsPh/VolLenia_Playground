@@ -169,8 +169,13 @@ void ExpandedFlowSimulation::resetSeed(unsigned int seed)
         }
     }
     status_.generation = 0;
-    status_.mass_after = matterMass();
-    status_.mass_before = status_.mass_after;
+    if (mass_diagnostics_enabled_) {
+        status_.mass_after = matterMass();
+        status_.mass_before = status_.mass_after;
+    } else {
+        status_.mass_after = 0.0;
+        status_.mass_before = 0.0;
+    }
     status_.mass_ratio = 1.0;
     updateStatus("Lenia model seed reset");
 }
@@ -184,7 +189,9 @@ void ExpandedFlowSimulation::simulateSteps(int steps)
         throw std::runtime_error("Cannot step Lenia model simulation before initialization");
     }
 
-    status_.mass_before = matterMass();
+    if (mass_diagnostics_enabled_) {
+        status_.mass_before = matterMass();
+    }
     VOL_CUDA_CHECK(cudaMemset(invalid_flag_, 0, sizeof(int)));
     for (int i = 0; i < steps; ++i) {
         computeAffinity();
@@ -200,9 +207,21 @@ void ExpandedFlowSimulation::simulateSteps(int steps)
     int invalid = 0;
     VOL_CUDA_CHECK(cudaMemcpy(&invalid, invalid_flag_, sizeof(int), cudaMemcpyDeviceToHost));
     status_.last_step_had_invalid_values = invalid != 0;
-    status_.mass_after = matterMass();
-    status_.mass_ratio = status_.mass_before > 1.0e-9 ? status_.mass_after / status_.mass_before : 1.0;
+    if (mass_diagnostics_enabled_) {
+        status_.mass_after = matterMass();
+        status_.mass_ratio = status_.mass_before > 1.0e-9 ? status_.mass_after / status_.mass_before : 1.0;
+    } else {
+        status_.mass_before = 0.0;
+        status_.mass_after = 0.0;
+        status_.mass_ratio = 1.0;
+    }
     updateStatus(status_.last_step_had_invalid_values ? "Lenia model running; invalid values clamped" : "Lenia model running");
+}
+
+void ExpandedFlowSimulation::setMassDiagnosticsEnabled(bool enabled)
+{
+    mass_diagnostics_enabled_ = enabled;
+    updateStatus(enabled ? "Lenia model mass diagnostics enabled" : "Lenia model mass diagnostics disabled");
 }
 
 void ExpandedFlowSimulation::setRenderChannel(int channel)
@@ -219,6 +238,35 @@ DeviceVolumeView ExpandedFlowSimulation::currentRenderView() const
 DeviceVolumeView ExpandedFlowSimulation::channelView(int channel) const
 {
     return state_.channelView(channel);
+}
+
+void ExpandedFlowSimulation::resetStateFromHost(VolumeDesc desc, int channels, const std::vector<float>& state_values)
+{
+    if (!isValidVolumeDesc(desc) || channels <= 0) {
+        throw std::runtime_error("Cannot reset Lenia model from invalid ModelState dimensions");
+    }
+    const std::size_t expected = volumeVoxelCount(desc) * static_cast<std::size_t>(channels);
+    if (state_values.size() != expected) {
+        throw std::runtime_error("ModelState value count does not match dimensions");
+    }
+    if (spec_.channelCount() != channels) {
+        throw std::runtime_error("ModelState channel count does not match current Lenia model");
+    }
+
+    ensureBuffers(desc, channels);
+    VOL_CUDA_CHECK(cudaMemcpy(state_.data(), state_values.data(), expected * sizeof(float), cudaMemcpyHostToDevice));
+    next_.clear(0.0f);
+    affinity_.clear(0.0f);
+    status_.generation = 0;
+    if (mass_diagnostics_enabled_) {
+        status_.mass_after = matterMass();
+        status_.mass_before = status_.mass_after;
+    } else {
+        status_.mass_after = 0.0;
+        status_.mass_before = 0.0;
+    }
+    status_.mass_ratio = 1.0;
+    updateStatus("Lenia model state loaded");
 }
 
 void ExpandedFlowSimulation::ensureBuffers(VolumeDesc desc, int channels)
@@ -340,6 +388,8 @@ void ExpandedFlowSimulation::stepFlow()
             desc_,
             spec_.dt,
             spec_.flow.flow_max,
+            spec_.flow.transport_sigma,
+            spec_.flow.reintegration_dd,
             spec_.flow.border);
     }
 }
@@ -375,6 +425,12 @@ void ExpandedFlowSimulation::updateStatus(const char* status_text)
     status_.render_channel = render_channel_;
     status_.update_mode = modelUpdateModeName(spec_.update_mode);
     status_.model_name = spec_.name;
+    status_.mass_diagnostics_enabled = mass_diagnostics_enabled_;
+    status_.reintegration_dd = flowTransportDd(
+        spec_.dt,
+        spec_.flow.flow_max,
+        spec_.flow.transport_sigma,
+        spec_.flow.reintegration_dd);
     status_.status = status_text;
     status_.last_error = status_.last_step_had_invalid_values ? "One or more NaN/Inf values were clamped during update." : "";
 }

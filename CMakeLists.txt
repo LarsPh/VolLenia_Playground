@@ -138,6 +138,7 @@ add_executable(VolLenia_Playground
     src/io/CellResampler.cu
     src/io/CellVolumeFile.cpp
     src/io/LeniaAnimalCatalog.cpp
+    src/io/ModelStateFile.cpp
     src/model/ModelSpec.cpp
     src/render/CudaVolumeRenderer.cu
     src/render/CudaPbo.cpp

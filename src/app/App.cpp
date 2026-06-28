@@ -5,6 +5,7 @@
 #include "core/GlCheck.h"
 #include "io/CellResampler.h"
 #include "io/CellVolumeFile.h"
+#include "io/ModelStateFile.h"
 #include "render/CudaPbo.h"
 #include "render/CudaVolumeRenderer.h"
 #include "render/GlDisplay.h"
@@ -431,9 +432,17 @@ void App::mainLoop()
             openModelSpecDialog();
             renderer_volume_dirty_ = true;
         }
+        if (ui_result.modelspec_open_state_dialog) {
+            openModelStateDialog();
+            renderer_volume_dirty_ = true;
+        }
         if (ui_result.modelspec_reload) {
             modelspec_reload_requested_ = true;
             modelspec_sim_dirty_ = true;
+            renderer_volume_dirty_ = true;
+        }
+        if (ui_result.modelspec_reload_state && !modelspec_config_.state_path.empty()) {
+            loadModelStateRuntime(utf8StringToPath(modelspec_config_.state_path.c_str()));
             renderer_volume_dirty_ = true;
         }
         if (ui_result.modelspec_resolution_changed) {
@@ -470,6 +479,7 @@ void App::mainLoop()
         }
         if (ui_result.modelspec_reset_seed) {
             if (modelspec_simulation_ != nullptr && modelspec_simulation_->isInitialized()) {
+                modelspec_simulation_->setMassDiagnosticsEnabled(modelspec_config_.mass_diagnostics_enabled);
                 modelspec_simulation_->resetSeed(modelspec_config_.seed);
             } else {
                 modelspec_sim_dirty_ = true;
@@ -479,6 +489,7 @@ void App::mainLoop()
         if (ui_result.modelspec_regenerate_seed) {
             ++modelspec_config_.seed;
             if (modelspec_simulation_ != nullptr && modelspec_simulation_->isInitialized()) {
+                modelspec_simulation_->setMassDiagnosticsEnabled(modelspec_config_.mass_diagnostics_enabled);
                 modelspec_simulation_->resetSeed(modelspec_config_.seed);
             } else {
                 modelspec_sim_dirty_ = true;
@@ -755,8 +766,10 @@ void App::renderModelSpecVolumeFrame()
     if (modelspec_sim_dirty_ || !modelspec_simulation_->isInitialized()) {
         modelspec_simulation_->initialize(desc, modelspec_);
         modelspec_simulation_->setRenderChannel(modelspec_config_.render_channel);
+        modelspec_simulation_->setMassDiagnosticsEnabled(modelspec_config_.mass_diagnostics_enabled);
         modelspec_sim_dirty_ = false;
     }
+    modelspec_simulation_->setMassDiagnosticsEnabled(modelspec_config_.mass_diagnostics_enabled);
 
     int steps = 0;
     if (modelspec_config_.playing) {
@@ -846,6 +859,40 @@ void App::openModelSpecDialog()
     modelspec_config_.load_error = std::string("Native file picker failed: ") + (error != nullptr ? error : "unknown error");
 }
 
+void App::openModelStateDialog()
+{
+    if (!nfd_initialized_) {
+        modelspec_config_.load_error = "Native file picker is not initialized.";
+        return;
+    }
+
+    nfdu8char_t* out_path = nullptr;
+    const nfdu8filteritem_t filters[] = {
+        {"Lenia model state JSON", "json"},
+    };
+    const std::filesystem::path current_path = modelspec_config_.state_path.empty()
+        ? std::filesystem::current_path()
+        : utf8StringToPath(modelspec_config_.state_path.c_str()).parent_path();
+    const std::string default_path_text = pathToUtf8String(current_path);
+    nfdopendialogu8args_t args {};
+    args.filterList = filters;
+    args.filterCount = 1;
+    args.defaultPath = default_path_text.c_str();
+
+    const nfdresult_t result = NFD_OpenDialogU8_With(&out_path, &args);
+    if (result == NFD_OKAY) {
+        loadModelStateRuntime(utf8StringToPath(out_path));
+        NFD_FreePathU8(out_path);
+        return;
+    }
+    if (result == NFD_CANCEL) {
+        return;
+    }
+
+    const char* error = NFD_GetError();
+    modelspec_config_.load_error = std::string("Native file picker failed: ") + (error != nullptr ? error : "unknown error");
+}
+
 bool App::loadAnimalCatalogRuntime(const std::filesystem::path& manifest_path)
 {
     LeniaAnimalCatalog next_catalog;
@@ -879,6 +926,39 @@ bool App::loadModelSpecRuntime(const std::filesystem::path& spec_path)
         modelspec_config_.load_error.clear();
         modelspec_config_.edit_error.clear();
         modelspec_sim_dirty_ = true;
+        volume_source_ = VolumeSource::ModelSpec;
+        return true;
+    } catch (const std::exception& exception) {
+        modelspec_config_.load_error = exception.what();
+        return false;
+    }
+}
+
+bool App::loadModelStateRuntime(const std::filesystem::path& manifest_path)
+{
+    try {
+        const ModelStateFile state = ModelStateLoader::load(manifest_path);
+        if (!loadModelSpecRuntime(state.model_spec_path)) {
+            return false;
+        }
+        modelspec_config_.state_path = pathToUtf8String(manifest_path);
+        modelspec_config_.resolution = std::clamp(state.desc.nx, 16, 256);
+        modelspec_config_.render_channel = std::clamp(state.render_channel, 0, state.channels - 1);
+        modelspec_config_.composite_render = state.composite;
+        modelspec_.render_channel = modelspec_config_.render_channel;
+        modelspec_staged_ = modelspec_;
+
+        if (modelspec_simulation_ == nullptr) {
+            modelspec_simulation_ = std::make_unique<ExpandedFlowSimulation>();
+        }
+        modelspec_simulation_->initialize(state.desc, modelspec_);
+        modelspec_simulation_->setMassDiagnosticsEnabled(modelspec_config_.mass_diagnostics_enabled);
+        modelspec_simulation_->setRenderChannel(modelspec_config_.render_channel);
+        modelspec_simulation_->resetStateFromHost(state.desc, state.channels, state.values);
+        modelspec_status_ = modelspec_simulation_->status();
+        modelspec_status_.playing = modelspec_config_.playing;
+        modelspec_sim_dirty_ = false;
+        renderer_volume_dirty_ = true;
         volume_source_ = VolumeSource::ModelSpec;
         return true;
     } catch (const std::exception& exception) {

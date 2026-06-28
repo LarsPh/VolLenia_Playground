@@ -577,8 +577,18 @@ UiPanelResult UiPanel::render(
             result.modelspec_open_dialog = true;
         }
         ImGui::SameLine();
+        if (ImGui::Button("Open state...")) {
+            result.modelspec_open_state_dialog = true;
+        }
+        ImGui::SameLine();
         if (ImGui::Button("Reload current")) {
             result.modelspec_reload = true;
+        }
+        if (!modelspec_config.state_path.empty()) {
+            ImGui::SameLine();
+            if (ImGui::Button("Reload state")) {
+                result.modelspec_reload_state = true;
+            }
         }
         if (ImGui::Button("Apply/Rebuild model")) {
             result.modelspec_apply_edits = true;
@@ -596,6 +606,8 @@ UiPanelResult UiPanel::render(
         }
         ImGui::SliderInt("Steps per frame", &modelspec_config.steps_per_frame, 0, 32);
         helpMarker("Number of simulation steps advanced for each rendered frame while playing.");
+        ImGui::Checkbox("Mass diagnostics", &modelspec_config.mass_diagnostics_enabled);
+        helpMarker("When disabled, interactive Lenia Model runs avoid full-volume CPU mass copies. Enable only for debug mass ratios.");
 
         const std::array<int, 5> resolutions {64, 96, 128, 160, 192};
         int resolution_index = resolutionToIndex(modelspec_config.resolution, resolutions);
@@ -904,8 +916,16 @@ UiPanelResult UiPanel::render(
         ImGui::Text("Kernels: %d", modelspec_status.kernel_count);
         ImGui::Text("Render channel: %d", modelspec_status.render_channel);
         ImGui::Text("Generation: %llu", modelspec_status.generation);
-        ImGui::Text("Mass: %.6f -> %.6f", modelspec_status.mass_before, modelspec_status.mass_after);
-        ImGui::Text("Mass ratio: %.6f", modelspec_status.mass_ratio);
+        ImGui::Text("Transport dd: %d", modelspec_status.reintegration_dd);
+        if (modelspec_status.mass_diagnostics_enabled) {
+            ImGui::Text("Mass: %.6f -> %.6f", modelspec_status.mass_before, modelspec_status.mass_after);
+            ImGui::Text("Mass ratio: %.6f", modelspec_status.mass_ratio);
+        } else {
+            ImGui::TextUnformatted("Mass: diagnostics disabled");
+        }
+        if (!modelspec_config.state_path.empty()) {
+            ImGui::TextWrapped("State: %s", modelspec_config.state_path.c_str());
+        }
         ImGui::TextWrapped("Simulation: %s", modelspec_status.status.c_str());
         if (modelspec_config.staged_dirty) {
             ImGui::TextUnformatted("Staged edits pending Apply/Rebuild model");
