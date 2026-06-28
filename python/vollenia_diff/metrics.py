@@ -127,6 +127,30 @@ def active_voxels(state: torch.Tensor, threshold: float = 0.05) -> torch.Tensor:
     return (state > threshold).sum()
 
 
+def soft_active_field(state: torch.Tensor, threshold: float = 0.05, sharpness: float = 40.0) -> torch.Tensor:
+    return torch.sigmoid((state - float(threshold)) * float(sharpness))
+
+
+def soft_active_fraction(state: torch.Tensor, threshold: float = 0.05, sharpness: float = 40.0) -> torch.Tensor:
+    return soft_active_field(state, threshold=threshold, sharpness=sharpness).mean()
+
+
+def soft_active_count(state: torch.Tensor, threshold: float = 0.05, sharpness: float = 40.0) -> torch.Tensor:
+    return soft_active_field(state, threshold=threshold, sharpness=sharpness).sum()
+
+
+def soft_active_ratio(
+    final: torch.Tensor,
+    initial: torch.Tensor,
+    threshold: float = 0.05,
+    sharpness: float = 40.0,
+    eps: float = 1.0e-8,
+) -> torch.Tensor:
+    return soft_active_count(final, threshold=threshold, sharpness=sharpness) / (
+        soft_active_count(initial, threshold=threshold, sharpness=sharpness) + eps
+    )
+
+
 def density_view(state: torch.Tensor, mode: str = "raw") -> torch.Tensor:
     if mode == "raw":
         return state

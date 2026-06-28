@@ -97,6 +97,9 @@ class LeniaSimulator:
         self._kernel_key: tuple[object, ...] | None = None
         self._step_callable = None
         self._step_key: tuple[object, ...] | None = None
+        self._dynamic_step_callable = None
+        self._dynamic_step_key: tuple[object, ...] | None = None
+        self.dynamic_compile_error: str | None = None
 
     def _current_kernel_key(self) -> tuple[object, ...]:
         params = self.params.sanitized()
@@ -131,6 +134,8 @@ class LeniaSimulator:
         self._kernel_key = key
         self._step_callable = None
         self._step_key = None
+        self._dynamic_step_callable = None
+        self._dynamic_step_key = None
 
     def _current_step_key(self) -> tuple[object, ...]:
         params = self.params.sanitized()
@@ -163,6 +168,42 @@ class LeniaSimulator:
             self._step_callable = step_fn
         self._step_key = key
 
+    def _current_dynamic_step_key(self) -> tuple[object, ...]:
+        params = self.params.sanitized()
+        return (
+            self.shape,
+            str(self.device),
+            str(self.dtype),
+            params.gn,
+            self.clip_mode,
+            self.compile_step,
+            self.compile_backend,
+            self.compile_mode,
+        )
+
+    def _ensure_dynamic_step_callable(self) -> None:
+        self._ensure_kernel()
+        key = self._current_dynamic_step_key()
+        if key == self._dynamic_step_key and self._dynamic_step_callable is not None:
+            return
+        params = self.params.sanitized()
+        clip_id = _clip_mode_id(self.clip_mode)
+
+        def step_fn(
+            state: torch.Tensor,
+            kernel_hat: torch.Tensor,
+            m: torch.Tensor,
+            s: torch.Tensor,
+            T: torch.Tensor,
+        ) -> torch.Tensor:
+            return lenia_step_tensor(state, kernel_hat, self.shape, m, s, T, params.gn, clip_id)
+
+        if self.compile_step:
+            self._dynamic_step_callable = torch.compile(step_fn, backend=self.compile_backend, mode=self.compile_mode)
+        else:
+            self._dynamic_step_callable = step_fn
+        self._dynamic_step_key = key
+
     def potential(self, state: torch.Tensor) -> torch.Tensor:
         if tuple(state.shape) != self.shape:
             raise ValueError(f"State shape {tuple(state.shape)} does not match simulator shape {self.shape}")
@@ -182,6 +223,41 @@ class LeniaSimulator:
                     "torch.compile Lenia step failed "
                     f"(backend={self.compile_backend}, mode={self.compile_mode}, device={self.device})."
                 ) from exception
+            raise
+
+    def dynamic_step(
+        self,
+        state: torch.Tensor,
+        *,
+        m: float | torch.Tensor,
+        s: float | torch.Tensor,
+        T: float | torch.Tensor,
+    ) -> torch.Tensor:
+        state = state.to(device=self.device, dtype=self.dtype)
+        self._ensure_dynamic_step_callable()
+        assert self._dynamic_step_callable is not None
+        m_tensor = _scalar_like(m, state)
+        s_tensor = _scalar_like(s, state)
+        T_tensor = _scalar_like(T, state)
+        try:
+            return self._dynamic_step_callable(state, self.kernel_hat, m_tensor, s_tensor, T_tensor)
+        except Exception as exception:
+            if self.compile_step:
+                self.dynamic_compile_error = (
+                    "torch.compile dynamic Lenia step failed; fell back to eager "
+                    f"(backend={self.compile_backend}, mode={self.compile_mode}, device={self.device}): {exception}"
+                )
+                params = self.params.sanitized()
+                return lenia_step_tensor(
+                    state,
+                    self.kernel_hat,
+                    self.shape,
+                    m_tensor,
+                    s_tensor,
+                    T_tensor,
+                    params.gn,
+                    _clip_mode_id(self.clip_mode),
+                )
             raise
 
     def rollout(

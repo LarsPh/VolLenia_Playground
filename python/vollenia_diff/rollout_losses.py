@@ -114,6 +114,13 @@ def rollout_collect(
     for step_index in range(1, int(steps) + 1):
         if use_simulator_step:
             state = simulator.step(state)
+        elif simulator.compile_step:
+            state = simulator.dynamic_step(
+                state,
+                m=base_params.m if m is None else m,
+                s=base_params.s if s is None else s,
+                T=base_params.T if T is None else T,
+            )
         else:
             state = lenia_step_tensor(
                 state,
@@ -132,10 +139,6 @@ def rollout_collect(
     if return_steps:
         return states, state_steps
     return states
-
-
-def soft_active_fraction(state: torch.Tensor, threshold: float = 0.05, sharpness: float = 40.0) -> torch.Tensor:
-    return torch.sigmoid((state - threshold) * sharpness).mean()
 
 
 def ratio_window_loss(value: torch.Tensor, low: float, high: float) -> torch.Tensor:
@@ -189,16 +192,19 @@ def target_from_initial_offset(initial: torch.Tensor, offset_norm_zyx: list[floa
 
 def _base_terms(final: torch.Tensor, initial: torch.Tensor, target: torch.Tensor | None = None) -> dict[str, torch.Tensor]:
     desc = metrics.normalized_descriptors(final, initial=initial, target=target)
+    soft_fraction = metrics.soft_active_fraction(final)
+    soft_ratio = metrics.soft_active_ratio(final, initial)
     return {
         "mass_ratio": desc["mass_ratio"],
         "active_ratio": desc["active_ratio"],
+        "active_ratio_soft": soft_ratio,
         "compactness_ratio": desc["compactness_ratio"],
         "mass_fraction": desc["mass_fraction"],
         "active_fraction": desc["active_fraction"],
+        "active_fraction_soft": soft_fraction,
         "body_radius_norm": desc["body_radius_norm"],
         "anisotropy": desc["anisotropy"],
         "border_mass": desc["border_mass"],
-        "active_fraction_soft": soft_active_fraction(final),
         "max_density": metrics.max_density(final),
     }
 
@@ -233,6 +239,18 @@ def _target_losses_for_state(
     return target_norm, target_norm * target_norm, balanced_loss, target_mask_loss
 
 
+def _context_stage_target(target_context: object | None, index: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor | None:
+    if target_context is None:
+        return None
+    stages = getattr(target_context, "stages", None)
+    if not stages or index >= len(stages):
+        return None
+    values = getattr(stages[index], "target_zyx", None)
+    if not values:
+        return None
+    return torch.tensor([float(value) for value in values], device=device, dtype=dtype)
+
+
 def move_shape_target_loss(
     states: list[torch.Tensor],
     *,
@@ -241,6 +259,7 @@ def move_shape_target_loss(
     objective: dict[str, object] | None = None,
     state_steps: list[int] | None = None,
     total_steps: int | None = None,
+    target_context: object | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     config = _deep_update(MOVE_SHAPE_TARGET_OBJECTIVE, objective)
     weights = _weights(config, weights)
@@ -268,7 +287,9 @@ def move_shape_target_loss(
                 desired_step = int(round(float(stage.get("at_step_fraction", 1.0)) * float(final_step)))
             stage_state, sampled_step = _nearest_state_for_step(states, state_steps, desired_step)
             offset = stage.get("offset_norm_zyx", config.get("target_offset_norm_zyx", [0.0, 0.0, 0.12]))
-            stage_target = target_from_initial_offset(initial, list(offset))
+            stage_target = _context_stage_target(target_context, index, stage_state.device, stage_state.dtype)
+            if stage_target is None:
+                stage_target = target_from_initial_offset(initial, list(offset))
             stage_target_norm, stage_com_loss, stage_balanced_loss, stage_target_mask_loss = _target_losses_for_state(
                 stage_state,
                 stage_target,
@@ -311,7 +332,7 @@ def move_shape_target_loss(
     mass_fraction_low, mass_fraction_high = _window(config, "mass_fraction")
     active_fraction_low, active_fraction_high = _window(config, "active_fraction")
     absolute_occupancy_loss = fraction_window_loss(terms["mass_fraction"], mass_fraction_low, mass_fraction_high) + fraction_window_loss(
-        terms["active_fraction"],
+        terms["active_fraction_soft"],
         active_fraction_low,
         active_fraction_high,
     )
@@ -321,7 +342,7 @@ def move_shape_target_loss(
         "target_mask": target_mask_loss,
         "absolute_occupancy": absolute_occupancy_loss,
         "mass_ratio": ratio_window_loss(terms["mass_ratio"], mass_low, mass_high),
-        "active_ratio": ratio_window_loss(terms["active_ratio"], active_low, active_high),
+        "active_ratio": ratio_window_loss(terms["active_ratio_soft"], active_low, active_high),
         "compactness_ratio": ratio_window_loss(terms["compactness_ratio"], compact_low, compact_high),
         "anisotropy": F.relu(terms["anisotropy"] - float(config["anisotropy_max"])) ** 2,
         "border": terms["border_mass"] ** 2,
@@ -353,9 +374,9 @@ def rescue_unstable_animal_loss(
         terms = _base_terms(state, initial)
         per_state = {
             "mass_ratio": ratio_window_loss(terms["mass_ratio"], mass_low, mass_high),
-            "active_ratio": ratio_window_loss(terms["active_ratio"], active_low, active_high),
+            "active_ratio": ratio_window_loss(terms["active_ratio_soft"], active_low, active_high),
             "absolute_occupancy": fraction_window_loss(terms["mass_fraction"], mass_fraction_low, mass_fraction_high)
-            + fraction_window_loss(terms["active_fraction"], active_fraction_low, active_fraction_high),
+            + fraction_window_loss(terms["active_fraction_soft"], active_fraction_low, active_fraction_high),
             "compactness_ratio": ratio_window_loss(terms["compactness_ratio"], compact_low, compact_high),
             "anisotropy": F.relu(terms["anisotropy"] - float(config["anisotropy_max"])) ** 2,
             "border": terms["border_mass"] ** 2,

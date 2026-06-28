@@ -9,7 +9,7 @@ import pytest
 import torch
 
 from vollenia_diff.io import load_catalog_animal_state
-from vollenia_diff.metrics import descriptors_to_json, normalized_descriptors, state_summary
+from vollenia_diff.metrics import descriptors_to_json, normalized_descriptors, soft_active_fraction, soft_active_ratio, state_summary
 from vollenia_diff.params import LeniaParams
 from vollenia_diff.rollout_losses import (
     PROFILE_LOSSES,
@@ -20,27 +20,17 @@ from vollenia_diff.rollout_losses import (
     target_sphere_mask,
 )
 from vollenia_diff.simulator import LeniaSimulator, make_seed_state
+from vollenia_search.archive import choose_source, ranked_entries, score_100_from_loss
+from vollenia_search.config import _config_to_args, _load_yaml_config, load_search_config, parse_args
+from vollenia_search.evaluate import _continuation_horizons, evaluate_candidate, evaluate_continuation_gates, evaluate_life_gate
+from vollenia_search.mutation import _apply_rule_noise, candidate_mutation_decision, precheck_mutation_candidate
+from vollenia_search.optimize import gradient_diagnostics, make_optimizer
+from vollenia_search.sources import inject_procedural_source, procedural_source_state, should_inject_source
+from vollenia_search.targets import make_target_context
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import search_sensorimotor_mvp as search_mvp
-from search_sensorimotor_mvp import (
-    _apply_rule_noise,
-    _continuation_horizons,
-    candidate_mutation_decision,
-    choose_source,
-    evaluate_candidate,
-    evaluate_continuation_gates,
-    evaluate_life_gate,
-    gradient_diagnostics,
-    inject_procedural_source,
-    make_optimizer,
-    parse_args,
-    precheck_mutation_candidate,
-    procedural_source_state,
-    ranked_entries,
-    score_100_from_loss,
-    should_inject_source,
-)
+import vollenia_search.evaluate as search_eval
 
 
 def _read_f32(path: Path, shape: tuple[int, ...]) -> torch.Tensor:
@@ -138,6 +128,16 @@ def test_normalized_descriptors_and_profile_losses_are_finite() -> None:
     assert "absolute_occupancy" in rescue_terms
 
 
+def test_soft_active_terms_have_gradients_near_threshold() -> None:
+    state = torch.full((4, 4, 4), 0.05, device="cuda", requires_grad=True)
+    initial = torch.full((4, 4, 4), 0.04, device="cuda")
+    loss = soft_active_fraction(state) + soft_active_ratio(state, initial)
+    loss.backward()
+    assert state.grad is not None
+    assert torch.isfinite(state.grad).all()
+    assert state.grad.abs().sum() > 0.0
+
+
 def test_rollout_collect_returns_final_step_for_sparse_sampling() -> None:
     simulator = LeniaSimulator((8, 8, 8), LeniaParams(R=3.0), device="cuda", clip_mode="hard")
     initial = make_seed_state((8, 8, 8), device="cuda", seed=21)
@@ -180,6 +180,23 @@ def test_staged_move_target_profile_adds_stage_terms() -> None:
     assert torch.isfinite(multi_terms["stage_1_balanced_target"])
     assert int(multi_terms["stage_0_sampled_step"].detach().cpu()) == 2
     assert "stage_1_target_distance_norm" in multi_terms
+
+
+def test_target_context_is_per_candidate_for_initial_offset() -> None:
+    first = torch.zeros((16, 16, 16), device="cuda")
+    first[4:6, 4:6, 4:6] = 1.0
+    second = torch.zeros((16, 16, 16), device="cuda")
+    second[10:12, 10:12, 10:12] = 1.0
+    objective = {
+        "target_offset_norm_zyx": [0.0, 0.0, 0.1],
+        "target_profile": {"mode": "staged_offsets", "stages": [{"at_step_fraction": 1.0, "offset_norm_zyx": [0.0, 0.0, 0.1]}]},
+    }
+    first_context = make_target_context("move_shape_target", first, objective)
+    second_context = make_target_context("move_shape_target", second, objective)
+    assert first_context.target is not None
+    assert second_context.target is not None
+    assert not torch.allclose(first_context.target, second_context.target)
+    assert first_context.stages[0].target_zyx != second_context.stages[0].target_zyx
 
 
 def test_score_100_and_life_gate_classification() -> None:
@@ -337,7 +354,7 @@ def test_continuation_failure_caps_rank_score(monkeypatch) -> None:
             "skipped_continuation_steps": [],
         }
 
-    monkeypatch.setattr(search_mvp, "evaluate_continuation_gates", fake_continuation)
+    monkeypatch.setattr(search_eval, "evaluate_continuation_gates", fake_continuation)
     state0 = make_seed_state((12, 12, 12), device="cuda", seed=4)
     _, metrics, terms, score = evaluate_candidate(
         state0,
@@ -377,7 +394,7 @@ def test_continuation_stop_on_first_failure_metadata(monkeypatch) -> None:
             "eval_gates": {},
         }
 
-    monkeypatch.setattr(search_mvp, "evaluate_life_gate", always_fail)
+    monkeypatch.setattr(search_eval, "evaluate_life_gate", always_fail)
     state0 = make_seed_state((8, 8, 8), device="cuda", seed=23)
     params = LeniaParams(R=3.0)
     primary_final = LeniaSimulator((8, 8, 8), params, device="cuda", clip_mode="hard").step(state0)
@@ -608,8 +625,8 @@ def test_rule_mutation_probability_and_b_element_mask() -> None:
 
 
 def test_rescue_source_rule_randomization_changes_rms_but_not_structure() -> None:
-    config = search_mvp._load_yaml_config(Path("configs/search_mvp/rescue_unstable_animal/default.yaml"))
-    args = search_mvp._config_to_args(config)
+    config = _load_yaml_config(Path("configs/search_mvp/rescue_unstable_animal/default.yaml"))
+    args = _config_to_args(config)
     base = LeniaParams(R=10.0, m=0.12, s=0.01, T=10.0, b=[1.0, 0.5, 0.25], kn=1, gn=1)
     mutated, metadata = _apply_rule_noise(
         base,
@@ -706,6 +723,47 @@ def test_top_weighted_selection_uses_top_scores_without_life_gate_requirement() 
     assert metadata["selected_by"] == "top_weighted"
     assert metadata["score_field"] == "score_100"
     assert "dead_high" in metadata["candidate_ids"]
+
+
+def test_source_selection_adaptive_and_rescue_mixed_score_fields() -> None:
+    dead_high = {
+        "entry_id": "dead_high",
+        "score": 5.0,
+        "score_100": 80.0,
+        "rank_score_100": 5.0,
+        "life_gate_pass": False,
+        "longest_passed_horizon": 50,
+    }
+    alive_mid = {
+        "entry_id": "alive_mid",
+        "score": 40.0,
+        "score_100": 40.0,
+        "rank_score_100": 40.0,
+        "life_gate_pass": True,
+        "longest_passed_horizon": 500,
+    }
+    source, metadata = choose_source(
+        [dead_high, alive_mid],
+        "top_weighted",
+        selection_config={"top_k": 2, "temperature": 0.001, "score_field": "adaptive"},
+        seed=3,
+        gate_fail_score_cap=5.0,
+    )
+    assert source["entry_id"] == "alive_mid"
+    assert metadata["requested_score_field"] == "adaptive"
+    assert metadata["selected_source_score_field"] == "rank_score_100"
+    assert metadata["selected_source_longest_passed_horizon"] == 500
+
+    source, metadata = choose_source(
+        [dead_high, alive_mid],
+        "top_weighted",
+        selection_config={"top_k": 2, "temperature": 0.001, "score_field": "rescue_mixed_score"},
+        seed=3,
+        gate_fail_score_cap=5.0,
+    )
+    assert source["entry_id"] == "alive_mid"
+    assert metadata["score_field"] == "rescue_mixed_score"
+    assert metadata["selected_source_life_gate_pass"] is True
 
 
 def test_source_injection_schedule_and_metadata() -> None:
@@ -904,9 +962,9 @@ def test_maintain_profile_is_removed_from_cli_and_loss_registry(tmp_path, monkey
 
 def test_default_profile_configs_load_expected_search_settings(monkeypatch) -> None:
     cases = [
-        ("configs/search_mvp/move_shape_target/default.yaml", 40, 0.008, 0.0008, [0.02, 0.42], "top_weighted", True, 4, [100, 200, 500]),
-        ("configs/search_mvp/rescue_unstable_animal/default.yaml", 16, 0.002, 0.0005, [0.015, 0.45], "top_weighted", False, 4, [100, 200, 500, 1000]),
-        ("configs/search_mvp/rescue_unstable_animal/default_animal_24.yaml", 8, 0.002, 0.0005, [0.015, 0.45], "top_weighted", False, 4, [100, 200, 500, 1000, 2000]),
+        ("configs/search_mvp/move_shape_target/default.yaml", 40, 0.008, 0.0008, [0.02, 0.42], "top_weighted", True, 4, [100, 200, 500], "score_100"),
+        ("configs/search_mvp/rescue_unstable_animal/default.yaml", 16, 0.002, 0.0005, [0.015, 0.45], "top_weighted", False, 4, [100, 200, 500, 1000], "rank_score_100"),
+        ("configs/search_mvp/rescue_unstable_animal/default_animal_24.yaml", 8, 0.002, 0.0005, [0.015, 0.45], "top_weighted", False, 4, [100, 200, 500, 1000, 2000], "score_100"),
     ]
     for case in cases:
         config_path = case[0]
@@ -918,6 +976,7 @@ def test_default_profile_configs_load_expected_search_settings(monkeypatch) -> N
         expected_injection = case[6] if len(case) > 6 else False
         expected_precheck_attempts = case[7] if len(case) > 7 else 2
         expected_horizons = case[8] if len(case) > 8 else [100, 200, 500]
+        expected_score_field = case[9] if len(case) > 9 else "score_100"
         monkeypatch.setattr(sys, "argv", ["search_sensorimotor_mvp.py", "--config", config_path])
         args = parse_args()
         assert args.random_init_count == random_init_count
@@ -928,7 +987,7 @@ def test_default_profile_configs_load_expected_search_settings(monkeypatch) -> N
         assert args.evaluation["stop_on_first_failure"] is True
         assert args.source_selection == expected_selection
         assert args.source_selection_config["top_k"] == 12
-        assert args.source_selection_config["score_field"] == "score_100"
+        assert args.source_selection_config["score_field"] == expected_score_field
         assert args.source_injection["enabled"] is expected_injection
         assert args.mutation["precheck"]["enabled"] is True
         assert args.mutation["precheck"]["max_attempts"] == expected_precheck_attempts
@@ -947,6 +1006,14 @@ def test_default_profile_configs_load_expected_search_settings(monkeypatch) -> N
             assert len(args.objective["target_profile"]["stages"]) == 2
 
 
+def test_dataclass_config_loader_preserves_score_field_defaults() -> None:
+    rescue = load_search_config(Path("configs/search_mvp/rescue_unstable_animal/default.yaml"))
+    animal24 = load_search_config(Path("configs/search_mvp/rescue_unstable_animal/default_animal_24.yaml"))
+    assert rescue.source_selection_config.score_field == "rank_score_100"
+    assert animal24.source_selection_config.score_field == "score_100"
+    assert rescue.logging.inner_log_every == 5
+
+
 def _load_rescue_best_gate(suffix: str) -> dict[str, object]:
     root = Path("outputs/search_mvp") / f"rescue_sthard_64_{suffix}" / "best"
     catalog_path = root / "catalog.json"
@@ -963,8 +1030,8 @@ def _load_rescue_best_gate(suffix: str) -> dict[str, object]:
     if not state_path.exists():
         pytest.skip(f"Missing rescue regression state: {state_path}")
     state = _read_f32(state_path, shape).to(device="cuda")
-    config = search_mvp._load_yaml_config(Path("configs/search_mvp/rescue_unstable_animal/default.yaml"))
-    objective = search_mvp._config_to_args(config)["objective"]
+    config = _load_yaml_config(Path("configs/search_mvp/rescue_unstable_animal/default.yaml"))
+    objective = _config_to_args(config)["objective"]
     gate = _topology_gate_for_state(state, objective)
     gate["run_suffix"] = suffix
     gate["state_path"] = str(state_path)
@@ -978,7 +1045,7 @@ def test_rescue_best_blob_like_checkpoints_still_pass_topology_gate(suffix: str)
     assert gate["life_topology"] in {"blob", "cylinder", "plane"}
 
 
-@pytest.mark.parametrize("suffix", ["25", "26", "27", "28", "29", "30", "31"])
+@pytest.mark.parametrize("suffix", ["24", "25", "26", "27", "28", "29", "30", "31"])
 def test_rescue_best_membrane_checkpoints_pass_as_cylinder_or_plane(suffix: str) -> None:
     gate = _load_rescue_best_gate(suffix)
     assert gate["life_gate_pass"] is True, gate
@@ -987,7 +1054,7 @@ def test_rescue_best_membrane_checkpoints_pass_as_cylinder_or_plane(suffix: str)
     assert gate["collapse_reason"] not in old_false_reasons
 
 
-@pytest.mark.parametrize("suffix", ["22", "24"])
+@pytest.mark.parametrize("suffix", ["22"])
 def test_rescue_best_known_bad_checkpoints_do_not_pass_topology_gate(suffix: str) -> None:
     gate = _load_rescue_best_gate(suffix)
     assert gate["life_gate_pass"] is False, gate

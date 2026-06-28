@@ -150,3 +150,7 @@ export:
   save_initial_states: true
   checkpoint_every_iterations: 5
   best_every_iterations: 1
+
+logging:
+  inner_log_every: 5
+  detailed_terms_every: 25

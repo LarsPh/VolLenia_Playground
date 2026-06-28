@@ -47,7 +47,7 @@ search:
   source_selection_config:
     top_k: 12
     temperature: 8.0
-    score_field: score_100
+    score_field: rank_score_100
   source_injection:
     enabled: false
     every_iterations: 10
@@ -150,3 +150,7 @@ export:
   save_initial_states: true
   checkpoint_every_iterations: 5
   best_every_iterations: 1
+
+logging:
+  inner_log_every: 5
+  detailed_terms_every: 25
