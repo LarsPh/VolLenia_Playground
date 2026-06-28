@@ -1,0 +1,124 @@
+{
+  "format_version": 1,
+  "model_type": "expanded_flow",
+  "name": "flow_three_channel_complex",
+  "simulation": {"resolution": 64},
+  "state": {
+    "channels": [
+      {"name": "body_a", "role": "matter"},
+      {"name": "body_b", "role": "matter"},
+      {"name": "body_c", "role": "matter"}
+    ],
+    "render_channel": 0
+  },
+  "update": {
+    "mode": "flow",
+    "dt": 0.14,
+    "clip": "hard",
+    "flow": {
+      "theta_A": 1.15,
+      "alpha_power": 2.0,
+      "flow_max": 1.0,
+      "transport_sigma": 0.5,
+      "reintegration_dd": 1,
+      "border": "torus",
+      "gradient": "sobel3d"
+    }
+  },
+  "kernels": [
+    {
+      "name": "a_self_compact",
+      "src": 0,
+      "dst": 0,
+      "weight": 0.58,
+      "family": "smooth_gaussian_mixture",
+      "R": 9.0,
+      "envelope_sharpness": 10.0,
+      "basis": [
+        {"center": 0.24, "width": 0.08, "amplitude": 1.0},
+        {"center": 0.52, "width": 0.12, "amplitude": 0.42}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.12, "sigma": 0.040}
+    },
+    {
+      "name": "b_self_mid",
+      "src": 1,
+      "dst": 1,
+      "weight": 0.54,
+      "family": "smooth_gaussian_mixture",
+      "R": 11.0,
+      "envelope_sharpness": 10.0,
+      "basis": [
+        {"center": 0.30, "width": 0.10, "amplitude": 1.0},
+        {"center": 0.62, "width": 0.13, "amplitude": 0.35}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.14, "sigma": 0.045}
+    },
+    {
+      "name": "c_self_wide",
+      "src": 2,
+      "dst": 2,
+      "weight": 0.48,
+      "family": "smooth_gaussian_mixture",
+      "R": 13.0,
+      "envelope_sharpness": 9.0,
+      "basis": [
+        {"center": 0.34, "width": 0.11, "amplitude": 1.0},
+        {"center": 0.70, "width": 0.16, "amplitude": 0.28}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.16, "sigma": 0.052}
+    },
+    {
+      "name": "a_to_b_ring",
+      "src": 0,
+      "dst": 1,
+      "weight": 0.18,
+      "family": "smooth_gaussian_mixture",
+      "R": 15.0,
+      "envelope_sharpness": 8.0,
+      "basis": [
+        {"center": 0.44, "width": 0.15, "amplitude": 1.0}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.17, "sigma": 0.060}
+    },
+    {
+      "name": "b_to_c_ring",
+      "src": 1,
+      "dst": 2,
+      "weight": 0.16,
+      "family": "smooth_gaussian_mixture",
+      "R": 16.0,
+      "envelope_sharpness": 8.0,
+      "basis": [
+        {"center": 0.48, "width": 0.16, "amplitude": 1.0}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.18, "sigma": 0.064}
+    },
+    {
+      "name": "c_to_a_ring",
+      "src": 2,
+      "dst": 0,
+      "weight": 0.14,
+      "family": "smooth_gaussian_mixture",
+      "R": 14.0,
+      "envelope_sharpness": 8.0,
+      "basis": [
+        {"center": 0.46, "width": 0.15, "amplitude": 1.0}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.15, "sigma": 0.058}
+    },
+    {
+      "name": "b_inhibits_a",
+      "src": 1,
+      "dst": 0,
+      "weight": -0.08,
+      "family": "smooth_gaussian_mixture",
+      "R": 18.0,
+      "envelope_sharpness": 7.0,
+      "basis": [
+        {"center": 0.58, "width": 0.20, "amplitude": 1.0}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.22, "sigma": 0.080}
+    }
+  ]
+}

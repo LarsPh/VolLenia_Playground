@@ -82,6 +82,9 @@ VolumeSource sourceFromString(const std::string& value, VolumeSource fallback)
     if (value == "lenia") {
         return VolumeSource::Lenia;
     }
+    if (value == "modelspec") {
+        return VolumeSource::ModelSpec;
+    }
     return fallback;
 }
 
@@ -232,6 +235,19 @@ std::filesystem::path catalogDialogDefaultPath(const std::filesystem::path& curr
     return std::filesystem::current_path();
 }
 
+std::filesystem::path modelSpecDialogDefaultPath(const std::filesystem::path& current_path)
+{
+    const std::filesystem::path preset_path("configs/modelspec");
+    if (std::filesystem::exists(preset_path)) {
+        return preset_path;
+    }
+    const std::filesystem::path parent_path = current_path.parent_path();
+    if (!parent_path.empty() && std::filesystem::exists(parent_path)) {
+        return parent_path;
+    }
+    return std::filesystem::current_path();
+}
+
 } // namespace
 
 App::App() = default;
@@ -308,6 +324,7 @@ void App::initialize()
     display_ = std::make_unique<GlDisplay>();
     synthetic_volume_ = std::make_unique<SyntheticVolume>();
     lenia_simulation_ = std::make_unique<LeniaSimulation>();
+    modelspec_simulation_ = std::make_unique<ExpandedFlowSimulation>();
     volume_renderer_ = std::make_unique<CudaVolumeRenderer>();
     framebuffer_width_ = framebuffer_width;
     framebuffer_height_ = framebuffer_height;
@@ -358,6 +375,9 @@ void App::mainLoop()
             volume_source_,
             animal_catalog_,
             animal_catalog_error_,
+            modelspec_config_,
+            modelspec_status_,
+            modelspec_staged_,
             render_enabled_,
             volume_preset_,
             volume_resolution_,
@@ -406,6 +426,64 @@ void App::mainLoop()
         }
         if (ui_result.lenia_open_catalog_dialog) {
             openAnimalCatalogDialog();
+        }
+        if (ui_result.modelspec_open_dialog) {
+            openModelSpecDialog();
+            renderer_volume_dirty_ = true;
+        }
+        if (ui_result.modelspec_reload) {
+            modelspec_reload_requested_ = true;
+            modelspec_sim_dirty_ = true;
+            renderer_volume_dirty_ = true;
+        }
+        if (ui_result.modelspec_resolution_changed) {
+            modelspec_sim_dirty_ = true;
+            renderer_volume_dirty_ = true;
+        }
+        if (ui_result.modelspec_render_channel_changed) {
+            if (modelspec_simulation_ != nullptr && modelspec_simulation_->isInitialized()) {
+                modelspec_simulation_->setRenderChannel(modelspec_config_.render_channel);
+            }
+            renderer_volume_dirty_ = true;
+        }
+        if (ui_result.modelspec_apply_edits) {
+            if (!modelspec_staged_.channels.empty() && !modelspec_staged_.kernels.empty()) {
+                modelspec_ = modelspec_staged_;
+                modelspec_config_.resolution = std::clamp(modelspec_.default_desc.nx, 16, 256);
+                modelspec_config_.render_channel = std::clamp(modelspec_config_.render_channel, 0, modelspec_.channelCount() - 1);
+                modelspec_.render_channel = modelspec_config_.render_channel;
+                modelspec_config_.selected_kernel = std::clamp(modelspec_config_.selected_kernel, 0, modelspec_.kernelCount() - 1);
+                modelspec_config_.staged_dirty = false;
+                modelspec_config_.edit_error.clear();
+                modelspec_sim_dirty_ = true;
+                renderer_volume_dirty_ = true;
+            }
+        }
+        if (ui_result.modelspec_reset_edits) {
+            modelspec_staged_ = modelspec_;
+            modelspec_config_.selected_kernel = std::clamp(modelspec_config_.selected_kernel, 0, std::max(modelspec_staged_.kernelCount() - 1, 0));
+            modelspec_config_.staged_dirty = false;
+            modelspec_config_.edit_error.clear();
+        }
+        if (ui_result.modelspec_single_step) {
+            modelspec_single_step_requested_ = true;
+        }
+        if (ui_result.modelspec_reset_seed) {
+            if (modelspec_simulation_ != nullptr && modelspec_simulation_->isInitialized()) {
+                modelspec_simulation_->resetSeed(modelspec_config_.seed);
+            } else {
+                modelspec_sim_dirty_ = true;
+            }
+            renderer_volume_dirty_ = true;
+        }
+        if (ui_result.modelspec_regenerate_seed) {
+            ++modelspec_config_.seed;
+            if (modelspec_simulation_ != nullptr && modelspec_simulation_->isInitialized()) {
+                modelspec_simulation_->resetSeed(modelspec_config_.seed);
+            } else {
+                modelspec_sim_dirty_ = true;
+            }
+            renderer_volume_dirty_ = true;
         }
         if (ui_result.lenia_load_animal) {
             loadAnimalNative(lenia_config_.selected_animal_index);
@@ -488,6 +566,7 @@ void App::destroyRenderResources() noexcept
     volume_renderer_.reset();
     synthetic_volume_.reset();
     lenia_simulation_.reset();
+    modelspec_simulation_.reset();
     scaled_imported_cells_.reset();
     imported_cells_.reset();
     pbo_.reset();
@@ -570,6 +649,8 @@ void App::renderVolumeFrame()
 
     if (volume_source_ == VolumeSource::Lenia) {
         renderLeniaVolumeFrame();
+    } else if (volume_source_ == VolumeSource::ModelSpec) {
+        renderModelSpecVolumeFrame();
     } else {
         renderSyntheticVolumeFrame();
     }
@@ -653,6 +734,54 @@ void App::renderLeniaVolumeFrame()
     lenia_status_.playing = lenia_config_.playing;
 }
 
+void App::renderModelSpecVolumeFrame()
+{
+    if (modelspec_simulation_ == nullptr) {
+        modelspec_simulation_ = std::make_unique<ExpandedFlowSimulation>();
+    }
+
+    if (modelspec_.channels.empty() || modelspec_reload_requested_) {
+        loadModelSpecRuntime(modelspec_config_.model_path);
+        modelspec_reload_requested_ = false;
+    }
+    if (modelspec_.channels.empty()) {
+        throw std::runtime_error("No valid Lenia model is loaded: " + modelspec_config_.load_error);
+    }
+
+    const int resolution = std::clamp(modelspec_config_.resolution, 16, 256);
+    modelspec_config_.resolution = resolution;
+    const VolumeDesc desc {resolution, resolution, resolution};
+
+    if (modelspec_sim_dirty_ || !modelspec_simulation_->isInitialized()) {
+        modelspec_simulation_->initialize(desc, modelspec_);
+        modelspec_simulation_->setRenderChannel(modelspec_config_.render_channel);
+        modelspec_sim_dirty_ = false;
+    }
+
+    int steps = 0;
+    if (modelspec_config_.playing) {
+        steps += std::clamp(modelspec_config_.steps_per_frame, 0, 32);
+    }
+    if (modelspec_single_step_requested_) {
+        ++steps;
+        modelspec_single_step_requested_ = false;
+    }
+    if (steps > 0) {
+        modelspec_simulation_->simulateSteps(steps);
+    }
+
+    modelspec_status_ = modelspec_simulation_->status();
+    modelspec_status_.playing = modelspec_config_.playing;
+    if (modelspec_status_.last_step_had_invalid_values) {
+        modelspec_config_.playing = false;
+        modelspec_status_.playing = false;
+    }
+
+    drawUploadedModelVolume("Rendering Lenia model simulation");
+    modelspec_status_ = modelspec_simulation_->status();
+    modelspec_status_.playing = modelspec_config_.playing;
+}
+
 void App::openAnimalCatalogDialog()
 {
     if (!nfd_initialized_) {
@@ -685,6 +814,38 @@ void App::openAnimalCatalogDialog()
     animal_catalog_error_ = std::string("Native file picker failed: ") + (error != nullptr ? error : "unknown error");
 }
 
+void App::openModelSpecDialog()
+{
+    if (!nfd_initialized_) {
+        modelspec_config_.load_error = "Native file picker is not initialized.";
+        return;
+    }
+
+    nfdu8char_t* out_path = nullptr;
+    const nfdu8filteritem_t filters[] = {
+        {"Lenia model JSON", "json"},
+    };
+    const std::filesystem::path default_path = modelSpecDialogDefaultPath(modelspec_config_.model_path);
+    const std::string default_path_text = pathToUtf8String(default_path);
+    nfdopendialogu8args_t args {};
+    args.filterList = filters;
+    args.filterCount = 1;
+    args.defaultPath = default_path_text.c_str();
+
+    const nfdresult_t result = NFD_OpenDialogU8_With(&out_path, &args);
+    if (result == NFD_OKAY) {
+        loadModelSpecRuntime(utf8StringToPath(out_path));
+        NFD_FreePathU8(out_path);
+        return;
+    }
+    if (result == NFD_CANCEL) {
+        return;
+    }
+
+    const char* error = NFD_GetError();
+    modelspec_config_.load_error = std::string("Native file picker failed: ") + (error != nullptr ? error : "unknown error");
+}
+
 bool App::loadAnimalCatalogRuntime(const std::filesystem::path& manifest_path)
 {
     LeniaAnimalCatalog next_catalog;
@@ -702,6 +863,28 @@ bool App::loadAnimalCatalogRuntime(const std::filesystem::path& manifest_path)
     lenia_config_.selected_animal_index = 0;
     animal_catalog_error_.clear();
     return true;
+}
+
+bool App::loadModelSpecRuntime(const std::filesystem::path& spec_path)
+{
+    try {
+        ModelSpec next_spec = ModelSpecLoader::load(spec_path);
+        modelspec_ = std::move(next_spec);
+        modelspec_staged_ = modelspec_;
+        modelspec_config_.model_path = pathToUtf8String(spec_path);
+        modelspec_config_.resolution = std::clamp(modelspec_.default_desc.nx, 16, 256);
+        modelspec_config_.render_channel = std::clamp(modelspec_.render_channel, 0, modelspec_.channelCount() - 1);
+        modelspec_config_.selected_kernel = 0;
+        modelspec_config_.staged_dirty = false;
+        modelspec_config_.load_error.clear();
+        modelspec_config_.edit_error.clear();
+        modelspec_sim_dirty_ = true;
+        volume_source_ = VolumeSource::ModelSpec;
+        return true;
+    } catch (const std::exception& exception) {
+        modelspec_config_.load_error = exception.what();
+        return false;
+    }
 }
 
 void App::loadAnimalNative(int animal_index)
@@ -814,6 +997,74 @@ void App::drawUploadedVolume(DeviceVolumeView volume, const char* status_text)
     }
 }
 
+void App::drawUploadedModelVolume(const char* status_text)
+{
+    if (modelspec_simulation_ == nullptr || !modelspec_simulation_->isInitialized()) {
+        throw std::runtime_error("Cannot render uninitialized Lenia model simulation");
+    }
+
+    if (!modelspec_config_.composite_render) {
+        drawUploadedVolume(modelspec_simulation_->currentRenderView(), status_text);
+        return;
+    }
+
+    const int channel_count = std::min(modelspec_simulation_->channelCount(), kMaxCompositeChannels);
+    std::array<DeviceVolumeView, kMaxCompositeChannels> views {};
+    for (int i = 0; i < channel_count; ++i) {
+        views[static_cast<std::size_t>(i)] = modelspec_simulation_->channelView(i);
+    }
+    volume_renderer_->uploadCompositeVolumes(views, std::max(channel_count, 1));
+    volume_status_.volume_valid = channel_count > 0;
+    volume_status_.texture_valid = volume_renderer_->hasCompositeTextures();
+    volume_status_.volume_desc = channel_count > 0 ? views[0].desc : VolumeDesc {};
+    volume_status_.volume_bytes = channel_count > 0 ? volumeByteSize(views[0].desc) * static_cast<std::size_t>(channel_count) : 0;
+
+    std::array<CompositeChannelRenderParams, kMaxCompositeChannels> channels {};
+    const std::array<float3, kMaxCompositeChannels> palette {
+        make_float3(0.20f, 0.88f, 0.78f),
+        make_float3(0.10f, 0.28f, 0.95f),
+        make_float3(1.00f, 0.72f, 0.22f),
+        make_float3(0.92f, 0.28f, 0.86f),
+    };
+    for (int i = 0; i < kMaxCompositeChannels; ++i) {
+        channels[static_cast<std::size_t>(i)].enabled = i < channel_count && modelspec_config_.composite_enabled[static_cast<std::size_t>(i)];
+        channels[static_cast<std::size_t>(i)].intensity = modelspec_config_.composite_intensity[static_cast<std::size_t>(i)];
+        channels[static_cast<std::size_t>(i)].color = palette[static_cast<std::size_t>(i)];
+    }
+
+    bool mapped = false;
+    try {
+        const PboMapping mapping = pbo_->map();
+        mapped = true;
+
+        const float aspect = static_cast<float>(framebuffer_width_) / static_cast<float>(std::max(framebuffer_height_, 1));
+        volume_renderer_->renderComposite(
+            mapping,
+            framebuffer_width_,
+            framebuffer_height_,
+            camera_.frame(aspect),
+            render_params_,
+            channels,
+            channel_count);
+
+        pbo_->unmap();
+        mapped = false;
+
+        display_->drawPbo(pbo_->glBuffer(), framebuffer_width_, framebuffer_height_);
+        volume_status_.status = status_text;
+        volume_status_.last_error.clear();
+    } catch (...) {
+        if (mapped) {
+            try {
+                pbo_->unmap();
+            } catch (const std::exception& exception) {
+                volume_status_.last_error = exception.what();
+            }
+        }
+        throw;
+    }
+}
+
 AppConfig App::loadConfig(const std::string& path) const
 {
     AppConfig config;
@@ -854,7 +1105,7 @@ AppConfig App::loadConfig(const std::string& path) const
     const int resolution = jsonValueOr(volume, "resolution", config.volume.nx);
     config.volume = VolumeDesc {resolution, resolution, resolution};
     config.preset = presetFromString(jsonValueOr(volume, "preset", std::string("lenia_phantom")), config.preset);
-    config.source = sourceFromString(jsonValueOr(root, "source", std::string("lenia")), config.source);
+    config.source = sourceFromString(jsonValueOr(root, "source", std::string("modelspec")), config.source);
 
     return config;
 }

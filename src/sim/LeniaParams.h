@@ -10,6 +10,7 @@ namespace vollenia {
 enum class VolumeSource {
     Synthetic = 0,
     Lenia,
+    ModelSpec,
 };
 
 enum class LeniaParamPreset {
@@ -70,6 +71,8 @@ inline const char* volumeSourceName(VolumeSource source)
         return "Synthetic";
     case VolumeSource::Lenia:
         return "Lenia";
+    case VolumeSource::ModelSpec:
+        return "Lenia Model";
     default:
         return "Unknown";
     }

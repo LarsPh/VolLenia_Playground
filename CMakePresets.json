@@ -13,7 +13,7 @@
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_CUDA_ARCHITECTURES": "native"
+        "CMAKE_CUDA_ARCHITECTURES": "89"
       }
     },
     {

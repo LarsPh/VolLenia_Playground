@@ -1,0 +1,82 @@
+{
+  "format_version": 1,
+  "model_type": "expanded_flow",
+  "name": "flow_two_channel",
+  "simulation": {"resolution": 64},
+  "state": {
+    "channels": [
+      {"name": "body_a", "role": "matter"},
+      {"name": "body_b", "role": "matter"}
+    ],
+    "render_channel": 0
+  },
+  "update": {
+    "mode": "flow",
+    "dt": 0.16,
+    "flow": {
+      "theta_A": 1.25,
+      "alpha_power": 2.0,
+      "flow_max": 1.0,
+      "transport_sigma": 0.5,
+      "reintegration_dd": 1,
+      "border": "torus",
+      "gradient": "sobel3d"
+    }
+  },
+  "kernels": [
+    {
+      "name": "a_self",
+      "src": 0,
+      "dst": 0,
+      "weight": 0.75,
+      "family": "smooth_gaussian_mixture",
+      "R": 10.0,
+      "envelope_sharpness": 10.0,
+      "basis": [
+        {"center": 0.25, "width": 0.08, "amplitude": 1.0},
+        {"center": 0.54, "width": 0.12, "amplitude": 0.45}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.12, "sigma": 0.04}
+    },
+    {
+      "name": "b_self",
+      "src": 1,
+      "dst": 1,
+      "weight": 0.70,
+      "family": "smooth_gaussian_mixture",
+      "R": 12.0,
+      "envelope_sharpness": 10.0,
+      "basis": [
+        {"center": 0.30, "width": 0.10, "amplitude": 1.0},
+        {"center": 0.62, "width": 0.13, "amplitude": 0.35}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.14, "sigma": 0.045}
+    },
+    {
+      "name": "a_to_b",
+      "src": 0,
+      "dst": 1,
+      "weight": 0.25,
+      "family": "smooth_gaussian_mixture",
+      "R": 16.0,
+      "envelope_sharpness": 8.0,
+      "basis": [
+        {"center": 0.45, "width": 0.16, "amplitude": 1.0}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.16, "sigma": 0.06}
+    },
+    {
+      "name": "b_to_a",
+      "src": 1,
+      "dst": 0,
+      "weight": -0.12,
+      "family": "smooth_gaussian_mixture",
+      "R": 14.0,
+      "envelope_sharpness": 8.0,
+      "basis": [
+        {"center": 0.50, "width": 0.18, "amplitude": 1.0}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.20, "sigma": 0.07}
+    }
+  ]
+}

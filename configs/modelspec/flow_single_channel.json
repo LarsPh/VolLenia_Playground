@@ -1,0 +1,41 @@
+{
+  "format_version": 1,
+  "model_type": "expanded_flow",
+  "name": "flow_single_channel",
+  "simulation": {"resolution": 64},
+  "state": {
+    "channels": [
+      {"name": "body", "role": "matter"}
+    ],
+    "render_channel": 0
+  },
+  "update": {
+    "mode": "flow",
+    "dt": 0.18,
+    "flow": {
+      "theta_A": 1.0,
+      "alpha_power": 2.0,
+      "flow_max": 1.0,
+      "transport_sigma": 0.5,
+      "reintegration_dd": 1,
+      "border": "torus",
+      "gradient": "sobel3d"
+    }
+  },
+  "kernels": [
+    {
+      "name": "flow_body_self",
+      "src": 0,
+      "dst": 0,
+      "weight": 0.85,
+      "family": "smooth_gaussian_mixture",
+      "R": 11.0,
+      "envelope_sharpness": 10.0,
+      "basis": [
+        {"center": 0.24, "width": 0.08, "amplitude": 1.0},
+        {"center": 0.52, "width": 0.12, "amplitude": 0.5}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.12, "sigma": 0.04}
+    }
+  ]
+}

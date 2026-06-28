@@ -22,6 +22,15 @@ struct UiPanelResult {
     bool lenia_apply_params_only = false;
     bool lenia_reload_catalog = false;
     bool lenia_open_catalog_dialog = false;
+    bool modelspec_open_dialog = false;
+    bool modelspec_reload = false;
+    bool modelspec_reset_seed = false;
+    bool modelspec_regenerate_seed = false;
+    bool modelspec_single_step = false;
+    bool modelspec_resolution_changed = false;
+    bool modelspec_render_channel_changed = false;
+    bool modelspec_apply_edits = false;
+    bool modelspec_reset_edits = false;
 };
 
 class UiPanel {
@@ -35,6 +44,9 @@ public:
         VolumeSource& volume_source,
         const LeniaAnimalCatalog& animal_catalog,
         const std::string& animal_catalog_error,
+        ModelSpecConfig& modelspec_config,
+        const ExpandedFlowStatus& modelspec_status,
+        ModelSpec& staged_modelspec,
         bool& render_enabled,
         VolumePreset& volume_preset,
         int& volume_resolution,

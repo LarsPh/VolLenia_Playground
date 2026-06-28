@@ -1,0 +1,46 @@
+{
+  "format_version": 1,
+  "model_type": "expanded_flow",
+  "name": "expanded_two_kernel",
+  "simulation": {"resolution": 64},
+  "state": {
+    "channels": [
+      {"name": "body", "role": "matter"}
+    ],
+    "render_channel": 0
+  },
+  "update": {
+    "mode": "expanded_additive",
+    "dt": 0.06,
+    "clip": "hard"
+  },
+  "kernels": [
+    {
+      "name": "short_body",
+      "src": 0,
+      "dst": 0,
+      "weight": 0.10,
+      "family": "smooth_gaussian_mixture",
+      "R": 8.0,
+      "envelope_sharpness": 10.0,
+      "basis": [
+        {"center": 0.22, "width": 0.08, "amplitude": 1.0},
+        {"center": 0.48, "width": 0.10, "amplitude": 0.35}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.10, "sigma": 0.032}
+    },
+    {
+      "name": "wide_body",
+      "src": 0,
+      "dst": 0,
+      "weight": -0.045,
+      "family": "smooth_gaussian_mixture",
+      "R": 15.0,
+      "envelope_sharpness": 8.0,
+      "basis": [
+        {"center": 0.42, "width": 0.16, "amplitude": 1.0}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.18, "sigma": 0.06}
+    }
+  ]
+}

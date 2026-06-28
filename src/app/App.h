@@ -3,10 +3,13 @@
 #include "app/Camera.h"
 #include "io/CellResampler.h"
 #include "io/LeniaAnimalCatalog.h"
+#include "render/CudaVolumeRenderer.h"
 #include "render/RenderParams.h"
+#include "sim/ExpandedFlowSimulation.h"
 #include "sim/LeniaParams.h"
 
 #include <cstddef>
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -34,7 +37,7 @@ struct AppConfig {
     RenderParams render;
     VolumeDesc volume;
     VolumePreset preset = VolumePreset::LeniaPhantom;
-    VolumeSource source = VolumeSource::Lenia;
+    VolumeSource source = VolumeSource::ModelSpec;
 };
 
 enum class LeniaCellsSource {
@@ -69,6 +72,22 @@ struct LeniaConfig {
     LeniaParamsSource params_source = LeniaParamsSource::ParameterPreset;
 };
 
+struct ModelSpecConfig {
+    bool playing = true;
+    bool staged_dirty = false;
+    bool composite_render = false;
+    int steps_per_frame = 1;
+    int resolution = 64;
+    int render_channel = 0;
+    int selected_kernel = 0;
+    unsigned int seed = 1;
+    std::array<bool, kMaxCompositeChannels> composite_enabled {true, true, true, true};
+    std::array<float, kMaxCompositeChannels> composite_intensity {1.0f, 1.0f, 0.85f, 0.85f};
+    std::string model_path = "configs/modelspec/expanded_single_kernel.json";
+    std::string load_error;
+    std::string edit_error;
+};
+
 struct CudaDeviceInfo {
     bool available = false;
     int device_index = 0;
@@ -101,9 +120,13 @@ private:
     void renderVolumeFrame();
     void renderSyntheticVolumeFrame();
     void renderLeniaVolumeFrame();
+    void renderModelSpecVolumeFrame();
     void drawUploadedVolume(DeviceVolumeView volume, const char* status_text);
+    void drawUploadedModelVolume(const char* status_text);
     void openAnimalCatalogDialog();
+    void openModelSpecDialog();
     bool loadAnimalCatalogRuntime(const std::filesystem::path& manifest_path);
+    bool loadModelSpecRuntime(const std::filesystem::path& spec_path);
     void loadAnimalNative(int animal_index);
     void loadAnimalCells(int animal_index, bool scaled);
     void applyAnimalParams(int animal_index, bool scale_radius);
@@ -120,6 +143,7 @@ private:
     std::unique_ptr<GlDisplay> display_;
     std::unique_ptr<SyntheticVolume> synthetic_volume_;
     std::unique_ptr<LeniaSimulation> lenia_simulation_;
+    std::unique_ptr<ExpandedFlowSimulation> modelspec_simulation_;
     std::unique_ptr<DeviceVolume> imported_cells_;
     std::unique_ptr<DeviceVolume> scaled_imported_cells_;
     LeniaAnimalCatalog animal_catalog_;
@@ -130,7 +154,11 @@ private:
     std::string animal_catalog_error_;
     LeniaConfig lenia_config_;
     LeniaStatus lenia_status_;
-    VolumeSource volume_source_ = VolumeSource::Lenia;
+    ModelSpecConfig modelspec_config_;
+    ExpandedFlowStatus modelspec_status_;
+    ModelSpec modelspec_;
+    ModelSpec modelspec_staged_;
+    VolumeSource volume_source_ = VolumeSource::ModelSpec;
     VolumePreset volume_preset_ = VolumePreset::LeniaPhantom;
     int volume_resolution_ = 128;
     unsigned int volume_seed_ = 1;
@@ -142,6 +170,9 @@ private:
     bool lenia_kernel_dirty_ = true;
     bool lenia_single_step_requested_ = false;
     bool lenia_imported_cells_dirty_ = false;
+    bool modelspec_sim_dirty_ = true;
+    bool modelspec_single_step_requested_ = false;
+    bool modelspec_reload_requested_ = false;
     int framebuffer_width_ = 0;
     int framebuffer_height_ = 0;
     float animation_time_seconds_ = 0.0f;

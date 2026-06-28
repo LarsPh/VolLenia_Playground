@@ -1,0 +1,33 @@
+{
+  "format_version": 1,
+  "model_type": "expanded_flow",
+  "name": "expanded_single_kernel",
+  "simulation": {"resolution": 64},
+  "state": {
+    "channels": [
+      {"name": "body", "role": "matter"}
+    ],
+    "render_channel": 0
+  },
+  "update": {
+    "mode": "expanded_additive",
+    "dt": 0.08,
+    "clip": "hard"
+  },
+  "kernels": [
+    {
+      "name": "body_self_0",
+      "src": 0,
+      "dst": 0,
+      "weight": 0.12,
+      "family": "smooth_gaussian_mixture",
+      "R": 10.0,
+      "envelope_sharpness": 10.0,
+      "basis": [
+        {"center": 0.28, "width": 0.09, "amplitude": 1.0},
+        {"center": 0.58, "width": 0.14, "amplitude": 0.45}
+      ],
+      "growth": {"family": "gaussian", "mu": 0.12, "sigma": 0.035}
+    }
+  ]
+}
